@@ -219,6 +219,7 @@ def index():
     db = get_db()
     search = request.args.get('search', '').strip()
     sub_cat_id = request.args.get('cat', '').strip()
+    show_orphan = request.args.get('orphan', '').strip()
 
     # 精确 SN 搜索 → 直接跳转
     if search:
@@ -233,6 +234,10 @@ def index():
         materials = db.execute(
             "SELECT * FROM materials WHERE category_id = ? ORDER BY inbound_time DESC",
             (sub_cat_id,)
+        ).fetchall()
+    elif show_orphan:
+        materials = db.execute(
+            "SELECT * FROM materials WHERE category_id IS NULL ORDER BY inbound_time DESC"
         ).fetchall()
     else:
         materials = db.execute(
@@ -292,6 +297,7 @@ def index():
                            materials=materials,
                            search=search,
                            current_cat=sub_cat_id,
+                           show_orphan=show_orphan,
                            total_all=total_all,
                            orphan=orphan)
 
@@ -582,6 +588,19 @@ def api_aftersales_complete(record_id):
     db.execute("UPDATE materials SET status='在库' WHERE sn=?", (record['sn'],))
     db.commit()
     return jsonify({'success': True, 'message': '售后工单已完成'})
+
+
+@app.route('/api/material/delete/<sn>', methods=['POST'])
+def api_delete_material(sn):
+    db = get_db()
+    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+        return jsonify({'success': False, 'message': '物料不存在'}), 404
+    db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
+    db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
+    db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
+    db.execute("DELETE FROM materials WHERE sn=?", (sn,))
+    db.commit()
+    return jsonify({'success': True, 'message': f'物料 {sn} 已删除'})
 
 
 @app.route('/api/check_sn/<sn>')

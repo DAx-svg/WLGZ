@@ -77,7 +77,8 @@
         </span>
         {% endfor %}
         {% if orphan > 0 %}
-        <span class="cat-pill text-muted">
+        <span class="cat-pill text-muted {% if show_orphan %}active{% endif %}"
+              onclick="window.location='/?orphan=1'" style="cursor:pointer;">
             未分类 <small>({{ orphan }})</small>
         </span>
         {% endif %}
@@ -142,16 +143,15 @@
     {% endfor %}
 
     <!-- 物料表格（有搜索或有选中品类时显示） -->
-    {% if search or current_cat %}
+    {% if search or current_cat or show_orphan %}
     <div class="card shadow-sm mt-3">
         <div class="card-header d-flex justify-content-between">
             <span>
                 {% if search %}搜索 "{{ search }}" 结果：{% endif %}
+                {% if show_orphan %}未分类物料：{% endif %}
                 <strong>{{ materials|length }}</strong> 件物料
             </span>
-            {% if current_cat %}
             <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
-            {% endif %}
         </div>
         <div class="card-body p-0">
             {% if materials %}
@@ -159,16 +159,16 @@
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th>
+                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th><th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for m in materials %}
-                        <tr class="clickable-row" onclick="window.location.href='/detail/{{ m.sn }}'">
-                            <td><span class="fw-bold text-primary">{{ m.sn }}</span></td>
-                            <td>{{ m.hw_version or '-' }}</td>
-                            <td>{{ m.sw_version or '-' }}</td>
-                            <td>
+                        <tr>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ m.sn }}</span></td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.hw_version or '-' }}</td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.sw_version or '-' }}</td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">
                                 {% if m.status == '在库' %}
                                 <span class="badge bg-success status-badge">{{ m.status }}</span>
                                 {% elif m.status == '已出库' %}
@@ -177,7 +177,8 @@
                                 <span class="badge bg-danger status-badge">{{ m.status }}</span>
                                 {% endif %}
                             </td>
-                            <td>{{ m.inbound_time }}</td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>
+                            <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation(); deleteMaterial('{{ m.sn }}')" title="删除物料">🗑</button></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -286,6 +287,14 @@ function showToast(msg, ok) {
     document.getElementById('toastBody').textContent = msg;
     el.classList.add(ok ? 'bg-success' : 'bg-danger', 'text-white');
     new bootstrap.Toast(el).show();
+}
+
+async function deleteMaterial(sn) {
+    if (!confirm('确定删除物料 ' + sn + '？此操作不可恢复！')) return;
+    const resp = await fetch('/api/material/delete/' + sn, {method:'POST'});
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(() => location.reload(), 500);
 }
 
 // ======= 品类管理 =======
