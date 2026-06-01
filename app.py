@@ -229,6 +229,10 @@ def index():
     search = request.args.get('search', '').strip()
     sub_cat_id = request.args.get('cat', '').strip()
     show_orphan = request.args.get('orphan', '').strip()
+    filter_status = request.args.get('status', '').strip()
+    show_month_in = request.args.get('month_in', '').strip()
+    show_month_out = request.args.get('month_out', '').strip()
+    this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
 
     # 精确 SN 搜索 → 直接跳转
     if search:
@@ -239,6 +243,11 @@ def index():
             "SELECT * FROM materials WHERE sn LIKE ? ORDER BY inbound_time DESC",
             (f'%{search}%',)
         ).fetchall()
+    elif filter_status:
+        materials = db.execute(
+            "SELECT * FROM materials WHERE status = ? ORDER BY inbound_time DESC",
+            (filter_status,)
+        ).fetchall()
     elif sub_cat_id:
         materials = db.execute(
             "SELECT * FROM materials WHERE category_id = ? ORDER BY inbound_time DESC",
@@ -247,6 +256,18 @@ def index():
     elif show_orphan:
         materials = db.execute(
             "SELECT * FROM materials WHERE category_id IS NULL ORDER BY inbound_time DESC"
+        ).fetchall()
+    elif show_month_in:
+        materials = db.execute(
+            "SELECT * FROM materials WHERE inbound_time LIKE ? ORDER BY inbound_time DESC",
+            (f'{this_month}%',)
+        ).fetchall()
+    elif show_month_out:
+        materials = db.execute(
+            "SELECT DISTINCT m.* FROM materials m "
+            "JOIN outbound_records o ON m.sn = o.sn "
+            "WHERE o.outbound_time LIKE ? ORDER BY m.inbound_time DESC",
+            (f'{this_month}%',)
         ).fetchall()
     else:
         materials = db.execute(
@@ -329,6 +350,9 @@ def index():
                            search=search,
                            current_cat=sub_cat_id,
                            show_orphan=show_orphan,
+                           filter_status=filter_status,
+                           show_month_in=show_month_in,
+                           show_month_out=show_month_out,
                            total_all=total_all,
                            orphan=orphan,
                            stats=stats)
