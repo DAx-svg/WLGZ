@@ -3,76 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>物料追溯系统 - 首页</title>
+    <title>物料追溯系统 v2.0</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { padding-top: 20px; background: #f5f7fa; }
-        .status-badge { font-size: 0.85rem; }
+        .category-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .cat-pill {
+            padding: 8px 20px; border-radius: 20px; border: 2px solid #dee2e6;
+            background: white; cursor: pointer; font-weight: 500; transition: all 0.2s;
+            user-select: none;
+        }
+        .cat-pill:hover { border-color: #0d6efd; background: #e7f1ff; }
+        .cat-pill.active { background: #0d6efd; color: white; border-color: #0d6efd; }
+        .sub-card {
+            border-left: 4px solid #0d6efd; margin-bottom: 12px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .sub-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .sub-card.active-card { border-left-color: #198754; background: #f0fff4; }
+        .stat-box { text-align: center; padding: 6px 12px; border-radius: 8px; background: #f8f9fa; min-width: 70px; }
+        .stat-box .num { font-size: 1.3rem; font-weight: 700; }
+        .stat-box .lbl { font-size: 0.7rem; color: #888; }
+        .stat-box.green  .num { color: #198754; }
+        .stat-box.yellow .num { color: #e6a817; }
+        .stat-box.red    .num { color: #dc3545; }
+        .sn-tag { display: inline-block; background: #e9ecef; padding: 2px 8px; border-radius: 4px;
+                  margin: 2px; font-size: 0.8rem; font-family: monospace; cursor: pointer; }
+        .sn-tag:hover { background: #0d6efd; color: white; }
         .clickable-row { cursor: pointer; }
         .clickable-row:hover { background-color: #e9ecef !important; }
-        .search-jump-hint { font-size: 0.8rem; color: #6c757d; margin-top: 4px; }
+        .status-badge { font-size: 0.85rem; }
+        .section-title { font-size: 0.9rem; font-weight: 600; color: #666; margin-bottom: 8px; }
     </style>
 </head>
 <body>
-<div class="container">
+<div class="container-fluid px-4">
 
-    <!-- 顶部导航 -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="mb-0"><i class="bi bi-box-seam"></i> 物料全流程追溯系统</h2>
-        <a href="/add" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> 添加新物料
-        </a>
-    </div>
-
-    <!-- 搜索栏 -->
-    <div class="card mb-4 shadow-sm">
-        <div class="card-body">
-            <form method="GET" action="/" class="row g-2 align-items-end">
-                <div class="col-md-6 col-lg-4">
-                    <label for="searchInput" class="form-label fw-bold">SN 搜索</label>
-                    <input type="text" class="form-control" id="searchInput" name="search"
-                           placeholder="输入完整SN直接跳转详情页，输入部分可模糊搜索"
-                           value="{{ search }}" autofocus>
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-outline-primary">
-                        <i class="bi bi-search"></i> 搜索
-                    </button>
-                </div>
-                <div class="col-auto">
-                    <a href="/" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-counterclockwise"></i> 显示全部
-                    </a>
-                </div>
-            </form>
-            {% if search %}
-            <div class="search-jump-hint">
-                <i class="bi bi-info-circle"></i> 搜索关键词：<strong>{{ search }}</strong>，共找到 {{ materials|length }} 条结果。输入完整SN可直接跳转详情页。
-            </div>
-            {% endif %}
+    <!-- 顶栏 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-box-seam"></i> 物料全流程追溯系统</h4>
+        <div>
+            <button class="btn btn-outline-secondary btn-sm me-2" data-bs-toggle="modal" data-bs-target="#catManageModal">
+                <i class="bi bi-gear"></i> 品类管理
+            </button>
+            <a href="/add" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-lg"></i> 添加新物料
+            </a>
         </div>
     </div>
 
-    <!-- 物料表格 -->
-    <div class="card shadow-sm">
+    <!-- SN 搜索 -->
+    <form method="GET" class="mb-3">
+        <div class="input-group" style="max-width:420px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" class="form-control" name="search" placeholder="输入 SN 搜索（完整匹配直接跳转详情）" value="{{ search }}">
+            <button class="btn btn-outline-primary" type="submit">搜索</button>
+            {% if search %}<a href="/" class="btn btn-outline-secondary">清除</a>{% endif %}
+        </div>
+    </form>
+
+    <!-- 品类导航栏 -->
+    <div class="category-bar">
+        <span class="cat-pill {% if not current_cat and not search %}active{% endif %}"
+              onclick="window.location='/'">
+            全部 <small class="text-muted">({{ total_all }})</small>
+        </span>
+        {% for cat in categories %}
+        <span class="cat-pill cat-parent" data-cid="{{ cat.id }}"
+              onclick="toggleParent({{ cat.id }})">
+            {{ cat.name }}
+            <small class="text-muted">({{ cat.subs|sum(attribute='total') }})</small>
+        </span>
+        {% endfor %}
+        {% if orphan > 0 %}
+        <span class="cat-pill text-muted">
+            未分类 <small>({{ orphan }})</small>
+        </span>
+        {% endif %}
+    </div>
+
+    <!-- 小类卡片区域 -->
+    {% for cat in categories %}
+    <div class="sub-cards-container" id="parent-{{ cat.id }}" style="display:none;">
+        {% for sub in cat.subs %}
+        <div class="card sub-card shadow-sm" id="subcard-{{ sub.id }}"
+             onclick="filterByCat({{ sub.id }})">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <!-- 名称和统计 -->
+                    <div style="min-width: 200px;">
+                        <h6 class="mb-2">
+                            <i class="bi bi-folder2-open text-primary"></i>
+                            {{ sub.name }}
+                            <span class="badge bg-secondary ms-1">{{ sub.total }} 件</span>
+                        </h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="stat-box">
+                                <div class="num">{{ sub.total }}</div>
+                                <div class="lbl">总计</div>
+                            </div>
+                            <div class="stat-box green">
+                                <div class="num">{{ sub.in_stock }}</div>
+                                <div class="lbl">在库</div>
+                            </div>
+                            <div class="stat-box yellow">
+                                <div class="num">{{ sub.outbound }}</div>
+                                <div class="lbl">已出库</div>
+                            </div>
+                            <div class="stat-box red">
+                                <div class="num">{{ sub.after_sales }}</div>
+                                <div class="lbl">售后中</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SN 列表 -->
+                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                        {% if sub.sns %}
+                        <div class="section-title">包含物料：</div>
+                        <div>
+                            {% for sn in sub.sns %}
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/{{ sn }}'"
+                                  title="点击查看详情">{{ sn }}</span>
+                            {% endfor %}
+                            {% if sub.total > 20 %}
+                            <span class="sn-tag text-muted">...共 {{ sub.total }} 件</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <span class="text-muted">暂无物料</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+
+    <!-- 物料表格（有搜索或有选中品类时显示） -->
+    {% if search or current_cat %}
+    <div class="card shadow-sm mt-3">
+        <div class="card-header d-flex justify-content-between">
+            <span>
+                {% if search %}搜索 "{{ search }}" 结果：{% endif %}
+                <strong>{{ materials|length }}</strong> 件物料
+            </span>
+            {% if current_cat %}
+            <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
+            {% endif %}
+        </div>
         <div class="card-body p-0">
             {% if materials %}
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th style="width: 160px;">SN</th>
-                            <th>硬件版本</th>
-                            <th>软件版本</th>
-                            <th>当前状态</th>
-                            <th>入库时间</th>
+                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for m in materials %}
-                        <tr class="clickable-row" onclick="window.location.href='/detail/{{ m.sn }}'"
-                            title="点击查看详情">
+                        <tr class="clickable-row" onclick="window.location.href='/detail/{{ m.sn }}'">
                             <td><span class="fw-bold text-primary">{{ m.sn }}</span></td>
                             <td>{{ m.hw_version or '-' }}</td>
                             <td>{{ m.sw_version or '-' }}</td>
@@ -83,8 +175,6 @@
                                 <span class="badge bg-warning text-dark status-badge">{{ m.status }}</span>
                                 {% elif m.status == '售后中' %}
                                 <span class="badge bg-danger status-badge">{{ m.status }}</span>
-                                {% else %}
-                                <span class="badge bg-secondary status-badge">{{ m.status }}</span>
                                 {% endif %}
                             </td>
                             <td>{{ m.inbound_time }}</td>
@@ -94,32 +184,205 @@
                 </table>
             </div>
             {% else %}
-            <div class="text-center py-5">
-                <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
-                <p class="mt-3 text-muted">
-                    {% if search %}
-                    未找到匹配 "{{ search }}" 的物料
-                    {% else %}
-                    暂无物料数据，点击右上角"添加新物料"开始使用
-                    {% endif %}
-                </p>
-                {% if search %}
-                <a href="/" class="btn btn-outline-secondary btn-sm">显示全部物料</a>
-                {% endif %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox" style="font-size:3rem;"></i>
+                <p class="mt-2">暂无匹配物料</p>
             </div>
             {% endif %}
         </div>
-    </div>
-
-    <!-- 统计信息 -->
-    {% if materials %}
-    <div class="text-muted mt-2 text-end">
-        共 <strong>{{ materials|length }}</strong> 件物料
     </div>
     {% endif %}
 
 </div>
 
+<!-- ============ 品类管理弹窗 ============ -->
+<div class="modal fade" id="catManageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-gear"></i> 品类管理</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- 大类 -->
+                    <div class="col-md-6">
+                        <h6>大类</h6>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="newParentName" placeholder="新大类名称">
+                            <button class="btn btn-outline-primary" onclick="addCategory(null)">添加</button>
+                        </div>
+                        <ul class="list-group mb-3" id="parentList"></ul>
+                    </div>
+                    <!-- 小类 -->
+                    <div class="col-md-6">
+                        <h6>小类（需先选大类）</h6>
+                        <div class="input-group mb-2">
+                            <select class="form-select" id="subParentSelect">
+                                <option value="">-- 选择所属大类 --</option>
+                            </select>
+                        </div>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="newSubName" placeholder="新小类名称">
+                            <button class="btn btn-outline-primary" onclick="addSubCategory()">添加</button>
+                        </div>
+                        <ul class="list-group" id="subList"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:99999;">
+    <div id="resultToast" class="toast"><div class="toast-body" id="toastBody"></div></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ======= 品类展开/收起 =======
+let activeParent = {{ current_cat and 'null' or 'null' }};
+
+function toggleParent(cid) {
+    const el = document.getElementById('parent-' + cid);
+    const pills = document.querySelectorAll('.cat-pill.cat-parent');
+    // 关掉其他
+    document.querySelectorAll('.sub-cards-container').forEach(d => d.style.display = 'none');
+    pills.forEach(p => p.classList.remove('active'));
+    if (activeParent === cid) {
+        activeParent = null;
+    } else {
+        el.style.display = 'block';
+        pills.forEach(p => { if (p.dataset.cid == cid) p.classList.add('active'); });
+        activeParent = cid;
+        // 清除表格区域
+        {% if current_cat %}
+        window.location = '/';
+        {% endif %}
+    }
+}
+
+function filterByCat(cid) {
+    document.querySelectorAll('.sub-card').forEach(c => c.classList.remove('active-card'));
+    document.getElementById('subcard-' + cid)?.classList.add('active-card');
+    window.location = '/?cat=' + cid;
+}
+
+// 页面加载时恢复状态
+{% if current_cat %}
+(function() {
+    // 找到 current_cat 所属的 parent 并展开
+    fetch('/')  // just for state, not needed due to server-side
+})();
+{% endif %}
+
+// ======= Toast =======
+function showToast(msg, ok) {
+    const el = document.getElementById('resultToast');
+    document.getElementById('toastBody').textContent = msg;
+    el.classList.add(ok ? 'bg-success' : 'bg-danger', 'text-white');
+    new bootstrap.Toast(el).show();
+}
+
+// ======= 品类管理 =======
+function loadCatList() {
+    fetch(location.href, {headers:{'Accept':'text/html'}}).then(r=>r.text()).then(html=>{
+        // Parse categories from current page (simpler via reload)
+    });
+    // 简单方案：直接操作 DOM 然后刷新
+}
+
+async function addCategory(parentId) {
+    const inputId = parentId ? 'newSubName' : 'newParentName';
+    const name = document.getElementById(inputId).value.trim();
+    if (!name) return showToast('请输入品类名称', false);
+    const resp = await fetch('/api/category', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: name, parent_id: parentId})
+    });
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) { document.getElementById(inputId).value = ''; setTimeout(()=>location.reload(), 500); }
+}
+
+async function addSubCategory() {
+    const parentId = document.getElementById('subParentSelect').value;
+    if (!parentId) return showToast('请先选择所属大类', false);
+    await addCategory(parseInt(parentId));
+}
+
+async function editCat(id, newName) {
+    const resp = await fetch('/api/category/' + id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: newName})
+    });
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(()=>location.reload(), 500);
+}
+
+async function deleteCat(id) {
+    if (!confirm('确定删除此品类及其子品类？关联物料将取消分类。')) return;
+    const resp = await fetch('/api/category/' + id, {method:'DELETE'});
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(()=>location.reload(), 500);
+}
+
+// 品类管理弹窗打开时加载数据
+document.getElementById('catManageModal').addEventListener('show.bs.modal', function() {
+    // 从已渲染的页面提取数据
+    const parents = document.querySelectorAll('.cat-pill.cat-parent');
+    const parentList = document.getElementById('parentList');
+    const subSelect = document.getElementById('subParentSelect');
+    const subList = document.getElementById('subList');
+
+    parentList.innerHTML = '';
+    subSelect.innerHTML = '<option value="">-- 选择所属大类 --</option>';
+    subList.innerHTML = '';
+
+    parents.forEach(p => {
+        const cid = p.dataset.cid;
+        const name = p.textContent.replace(/\s*\(\d+\)\s*/, '').trim();
+
+        // 大类列表
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = `<span>${name}</span>
+            <span>
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="var n=prompt('重命名:', '${name}'); if(n) editCat(${cid}, n)">✏️</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(${cid})">🗑</button>
+            </span>`;
+        parentList.appendChild(li);
+
+        // 小类选择下拉
+        const opt = document.createElement('option');
+        opt.value = cid;
+        opt.textContent = name;
+        subSelect.appendChild(opt);
+    });
+
+    // 获取小类
+    document.querySelectorAll('.sub-card').forEach(card => {
+        const h6 = card.querySelector('h6');
+        if (!h6) return;
+        const badge = h6.querySelector('.badge');
+        const name = h6.childNodes[h6.childNodes.length - 1]?.textContent?.trim() || '';
+        const subId = card.id.replace('subcard-', '');
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = `<span>${name}</span>
+            <span>
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="var n=prompt('重命名:', '${name}'); if(n) editCat(${subId}, n)">✏️</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(${subId})">🗑</button>
+            </span>`;
+        document.getElementById('subList').appendChild(li);
+    });
+});
+</script>
 </body>
 </html>
