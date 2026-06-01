@@ -1,0 +1,14 @@
+# 物料追溯系统 - Render 部署配置
+services:
+  - type: web
+    name: material-tracking
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: DATA_DIR
+        value: /opt/render/project/data
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/data
+      sizeGB: 1
