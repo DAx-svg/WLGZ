@@ -301,6 +301,28 @@ def index():
         "SELECT COUNT(*) AS cnt FROM materials WHERE category_id IS NULL"
     ).fetchone()['cnt']
 
+    # 首页统计
+    stats = {
+        'in_stock': db.execute(
+            "SELECT COUNT(*) AS cnt FROM materials WHERE status='在库'"
+        ).fetchone()['cnt'],
+        'outbound': db.execute(
+            "SELECT COUNT(*) AS cnt FROM materials WHERE status='已出库'"
+        ).fetchone()['cnt'],
+        'after_sales': db.execute(
+            "SELECT COUNT(*) AS cnt FROM materials WHERE status='售后中'"
+        ).fetchone()['cnt'],
+    }
+    this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
+    stats['month_in'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM materials WHERE inbound_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+    stats['month_out'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM outbound_records WHERE outbound_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+
     return render_template('index.html',
                            categories=categories,
                            materials=materials,
@@ -308,7 +330,8 @@ def index():
                            current_cat=sub_cat_id,
                            show_orphan=show_orphan,
                            total_all=total_all,
-                           orphan=orphan)
+                           orphan=orphan,
+                           stats=stats)
 
 
 @app.route('/detail/<sn>')
@@ -347,6 +370,21 @@ def detail(sn):
                            aftersales=aftersales,
                            version_changes=version_changes,
                            cats=cats)
+
+
+@app.route('/outbounds')
+def outbounds_page():
+    """出库记录全局视图"""
+    db = get_db()
+    outbounds = db.execute("""
+        SELECT o.*, m.category_id, c.name AS cat_name, p.name AS parent_name
+        FROM outbound_records o
+        JOIN materials m ON o.sn = m.sn
+        LEFT JOIN categories c ON m.category_id = c.id
+        LEFT JOIN categories p ON c.parent_id = p.id
+        ORDER BY o.outbound_time DESC
+    """).fetchall()
+    return render_template('outbounds.html', outbounds=outbounds)
 
 
 @app.route('/add')

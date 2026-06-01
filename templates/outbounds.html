@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出库记录</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background: #f5f7fa; }
+        .clickable-row { cursor: pointer; }
+        .clickable-row:hover { background-color: #e9ecef !important; }
+    </style>
+</head>
+<body>
+<div class="container-fluid px-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-truck"></i> 出库记录</h4>
+        <a href="/" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> 返回首页
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <strong>{{ outbounds|length }}</strong> 条出库记录
+        </div>
+        <div class="card-body p-0">
+            {% if outbounds %}
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>SN</th>
+                            <th>品类</th>
+                            <th>出库时间</th>
+                            <th>快递公司</th>
+                            <th>快递单号</th>
+                            <th>客户</th>
+                            <th>联系方式</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in outbounds %}
+                        <tr>
+                            <td class="clickable-row" onclick="window.location.href='/detail/{{ o.sn }}'">
+                                <span class="fw-bold text-primary">{{ o.sn }}</span>
+                            </td>
+                            <td>
+                                {% if o.cat_name %}
+                                {{ o.parent_name or '' }} → {{ o.cat_name }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ o.outbound_time }}</td>
+                            <td>{{ o.courier_company or '-' }}</td>
+                            <td><code>{{ o.tracking_number or '-' }}</code></td>
+                            <td>{{ o.customer_name or '-' }}</td>
+                            <td>{{ o.customer_contact or '-' }}</td>
+                            <td class="text-muted">{{ o.remarks or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox" style="font-size:3rem;"></i>
+                <p class="mt-2">暂无出库记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
