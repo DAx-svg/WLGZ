@@ -289,11 +289,51 @@ function showToast(msg, ok) {
 }
 
 // ======= 品类管理 =======
-function loadCatList() {
-    fetch(location.href, {headers:{'Accept':'text/html'}}).then(r=>r.text()).then(html=>{
-        // Parse categories from current page (simpler via reload)
+let catMgmtChanged = false;
+window._catNames = {};
+
+async function loadCategoryManager() {
+    const resp = await fetch('/api/categories');
+    const data = await resp.json();
+    const parentList = document.getElementById('parentList');
+    const subSelect = document.getElementById('subParentSelect');
+    const subList = document.getElementById('subList');
+    parentList.innerHTML = '';
+    subSelect.innerHTML = '<option value="">-- 选择所属大类 --</option>';
+    subList.innerHTML = '';
+    window._catNames = {};
+    data.parents.forEach(p => {
+        window._catNames[p.id] = p.name;
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = '<span>' + p.name + '</span>\
+            <span>\
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="editCatPrompt(' + p.id + ')">✏️</button>\
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(' + p.id + ')">🗑</button>\
+            </span>';
+        parentList.appendChild(li);
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        subSelect.appendChild(opt);
     });
-    // 简单方案：直接操作 DOM 然后刷新
+    data.subs.forEach(s => {
+        window._catNames[s.id] = s.name;
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = '<span><small class="text-muted">' + s.parent_name + ' →</small> ' + s.name + '</span>\
+            <span>\
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="editCatPrompt(' + s.id + ')">✏️</button>\
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(' + s.id + ')">🗑</button>\
+            </span>';
+        subList.appendChild(li);
+    });
+}
+
+function editCatPrompt(id) {
+    const oldName = window._catNames[id] || '';
+    const newName = prompt('新名称:', oldName);
+    if (newName && newName.trim() && newName.trim() !== oldName) editCat(id, newName.trim());
 }
 
 async function addCategory(parentId) {
@@ -306,7 +346,7 @@ async function addCategory(parentId) {
     });
     const data = await resp.json();
     showToast(data.message, data.success);
-    if (data.success) { document.getElementById(inputId).value = ''; setTimeout(()=>location.reload(), 500); }
+    if (data.success) { document.getElementById(inputId).value = ''; catMgmtChanged = true; loadCategoryManager(); }
 }
 
 async function addSubCategory() {
@@ -322,7 +362,7 @@ async function editCat(id, newName) {
     });
     const data = await resp.json();
     showToast(data.message, data.success);
-    if (data.success) setTimeout(()=>location.reload(), 500);
+    if (data.success) { catMgmtChanged = true; loadCategoryManager(); }
 }
 
 async function deleteCat(id) {
@@ -330,58 +370,16 @@ async function deleteCat(id) {
     const resp = await fetch('/api/category/' + id, {method:'DELETE'});
     const data = await resp.json();
     showToast(data.message, data.success);
-    if (data.success) setTimeout(()=>location.reload(), 500);
+    if (data.success) { catMgmtChanged = true; loadCategoryManager(); }
 }
 
-// 品类管理弹窗打开时加载数据
+// 弹窗打开时加载品类数据，关闭时若数据有变更则刷新页面
 document.getElementById('catManageModal').addEventListener('show.bs.modal', function() {
-    // 从已渲染的页面提取数据
-    const parents = document.querySelectorAll('.cat-pill.cat-parent');
-    const parentList = document.getElementById('parentList');
-    const subSelect = document.getElementById('subParentSelect');
-    const subList = document.getElementById('subList');
-
-    parentList.innerHTML = '';
-    subSelect.innerHTML = '<option value="">-- 选择所属大类 --</option>';
-    subList.innerHTML = '';
-
-    parents.forEach(p => {
-        const cid = p.dataset.cid;
-        const name = p.textContent.replace(/\s*\(\d+\)\s*/, '').trim();
-
-        // 大类列表
-        const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.innerHTML = `<span>${name}</span>
-            <span>
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="var n=prompt('重命名:', '${name}'); if(n) editCat(${cid}, n)">✏️</button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(${cid})">🗑</button>
-            </span>`;
-        parentList.appendChild(li);
-
-        // 小类选择下拉
-        const opt = document.createElement('option');
-        opt.value = cid;
-        opt.textContent = name;
-        subSelect.appendChild(opt);
-    });
-
-    // 获取小类
-    document.querySelectorAll('.sub-card').forEach(card => {
-        const h6 = card.querySelector('h6');
-        if (!h6) return;
-        const badge = h6.querySelector('.badge');
-        const name = h6.childNodes[h6.childNodes.length - 1]?.textContent?.trim() || '';
-        const subId = card.id.replace('subcard-', '');
-        const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        li.innerHTML = `<span>${name}</span>
-            <span>
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="var n=prompt('重命名:', '${name}'); if(n) editCat(${subId}, n)">✏️</button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(${subId})">🗑</button>
-            </span>`;
-        document.getElementById('subList').appendChild(li);
-    });
+    catMgmtChanged = false;
+    loadCategoryManager();
+});
+document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
+    if (catMgmtChanged) location.reload();
 });
 </script>
 </body>

@@ -278,10 +278,10 @@ def index():
             } for s in subs]
         })
 
-    # 总计数
-    total_all = sum(
-        sum(s['total'] for s in cat['subs']) for cat in categories
-    )
+    # 总计数（所有物料，含未分类）
+    total_all = db.execute(
+        "SELECT COUNT(*) AS cnt FROM materials"
+    ).fetchone()['cnt']
     # 未归类物料数
     orphan = db.execute(
         "SELECT COUNT(*) AS cnt FROM materials WHERE category_id IS NULL"
@@ -384,6 +384,26 @@ def api_delete_category(cid):
     db.execute("DELETE FROM categories WHERE id=? OR parent_id=?", (cid, cid))
     db.commit()
     return jsonify({'success': True, 'message': '品类已删除，关联物料已取消分类'})
+
+
+@app.route('/api/categories')
+def api_get_categories():
+    """返回所有品类（供品类管理弹窗动态刷新用）"""
+    db = get_db()
+    parents = db.execute(
+        "SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id"
+    ).fetchall()
+    subs = db.execute(
+        "SELECT c.*, p.name AS parent_name FROM categories c "
+        "LEFT JOIN categories p ON c.parent_id = p.id "
+        "WHERE c.parent_id IS NOT NULL ORDER BY p.id, c.id"
+    ).fetchall()
+    return jsonify({
+        'parents': [{'id': p['id'], 'name': p['name']} for p in parents],
+        'subs': [{'id': s['id'], 'name': s['name'],
+                  'parent_id': s['parent_id'],
+                  'parent_name': s['parent_name']} for s in subs]
+    })
 
 
 # ==========================================================================
