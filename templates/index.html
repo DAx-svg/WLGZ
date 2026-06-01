@@ -142,13 +142,14 @@
     </div>
     {% endfor %}
 
-    <!-- 物料表格（有搜索或有选中品类时显示） -->
-    {% if search or current_cat or show_orphan %}
+    <!-- 物料表格 -->
     <div class="card shadow-sm mt-3">
         <div class="card-header d-flex justify-content-between">
             <span>
                 {% if search %}搜索 "{{ search }}" 结果：{% endif %}
                 {% if show_orphan %}未分类物料：{% endif %}
+                {% if current_cat %}按品类筛选：{% endif %}
+                {% if not search and not current_cat and not show_orphan %}全部物料：{% endif %}
                 <strong>{{ materials|length }}</strong> 件物料
             </span>
             <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
@@ -192,7 +193,6 @@
             {% endif %}
         </div>
     </div>
-    {% endif %}
 
 </div>
 
