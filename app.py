@@ -113,23 +113,30 @@ def init_db():
 
 def insert_sample_data():
     db = get_db()
-    cur = db.execute("SELECT COUNT(*) AS cnt FROM materials")
-    if cur.fetchone()['cnt'] > 0:
+
+    # 品类：无论有没有物料，空库就插入示例品类
+    if db.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()['cnt'] == 0:
+        db.execute("INSERT INTO categories VALUES (1,'电路板',NULL)")
+        db.execute("INSERT INTO categories VALUES (2,'电源',NULL)")
+        db.execute("INSERT INTO categories VALUES (3,'按钮',NULL)")
+        db.execute("INSERT INTO categories VALUES (4,'控制板',1)")
+        db.execute("INSERT INTO categories VALUES (5,'驱动板',1)")
+        db.execute("INSERT INTO categories VALUES (6,'接口板',1)")
+        db.execute("INSERT INTO categories VALUES (7,'开关电源',2)")
+        db.execute("INSERT INTO categories VALUES (8,'线性电源',2)")
+        db.execute("INSERT INTO categories VALUES (9,'机械按钮',3)")
+        db.execute("INSERT INTO categories VALUES (10,'触摸按钮',3)")
+        db.commit()
+
+    # 物料：已有数据则跳过
+    if db.execute("SELECT COUNT(*) AS cnt FROM materials").fetchone()['cnt'] > 0:
+        print("[示例数据] 品类已就绪，物料已存在，跳过")
         return
 
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # ---- 示例品类 ----
-    db.execute("INSERT INTO categories VALUES (1,'电路板',NULL)")
-    db.execute("INSERT INTO categories VALUES (2,'电源',NULL)")
-    db.execute("INSERT INTO categories VALUES (3,'按钮',NULL)")
-    db.execute("INSERT INTO categories VALUES (4,'控制板',1)")
-    db.execute("INSERT INTO categories VALUES (5,'驱动板',1)")
-    db.execute("INSERT INTO categories VALUES (6,'接口板',1)")
-    db.execute("INSERT INTO categories VALUES (7,'开关电源',2)")
-    db.execute("INSERT INTO categories VALUES (8,'线性电源',2)")
-    db.execute("INSERT INTO categories VALUES (9,'机械按钮',3)")
-    db.execute("INSERT INTO categories VALUES (10,'触摸按钮',3)")
+    print("[示例数据] 品类已插入，继续插入物料...")
 
     # ---- 示例物料（带 category_id）----
     materials = [
