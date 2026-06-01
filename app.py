@@ -39,6 +39,14 @@ def close_db(exception):
         db.close()
 
 
+@app.after_request
+def add_no_cache(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+
 def init_db():
     db = get_db()
     db.executescript("""
