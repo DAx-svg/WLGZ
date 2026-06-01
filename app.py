@@ -13,6 +13,7 @@ v2.0 新增：二级品类管理、品类统计汇总。
 import os
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template, request, redirect, url_for, jsonify, g
 import sqlite3
 
@@ -133,7 +134,7 @@ def insert_sample_data():
         print("[示例数据] 品类已就绪，物料已存在，跳过")
         return
 
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
     # ---- 示例品类 ----
     print("[示例数据] 品类已插入，继续插入物料...")
@@ -433,7 +434,7 @@ def api_add_material():
         except (ValueError, TypeError):
             cat_id = None
 
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "INSERT INTO materials (sn, hw_version, sw_version, hw_description, "
         "sw_description, remarks, inbound_time, status, category_id) "
@@ -472,7 +473,7 @@ def api_batch_add():
     if not new_sns:
         return jsonify({'success': False, 'message': f'所有SN均已存在: {", ".join(exist_sns)}'}), 400
 
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     for sn in new_sns:
         db.execute(
             "INSERT INTO materials (sn, hw_version, sw_version, hw_description, "
@@ -497,7 +498,7 @@ def api_edit_material(sn):
         return jsonify({'success': False, 'message': '物料不存在'}), 404
 
     data = request.get_json(force=True)
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     old_hw, old_sw = material['hw_version'], material['sw_version']
     new_hw = data.get('hw_version', old_hw)
     new_sw = data.get('sw_version', old_sw)
@@ -541,7 +542,7 @@ def api_outbound(sn):
     if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
         return jsonify({'success': False, 'message': '物料不存在'}), 404
     data = request.get_json(force=True)
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "INSERT INTO outbound_records (sn, outbound_time, courier_company, "
         "tracking_number, customer_name, customer_contact, remarks) "
@@ -560,7 +561,7 @@ def api_aftersales(sn):
     if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
         return jsonify({'success': False, 'message': '物料不存在'}), 404
     data = request.get_json(force=True)
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "INSERT INTO after_sales_records (sn, created_time, return_courier, "
         "return_tracking, problem_description, status) VALUES (?,?,?,?,?,?)",
