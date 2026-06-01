@@ -184,7 +184,7 @@ async function doSubmit(formId, btnId, isBatch){
         var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         var d=await r.json();
         st(d.message, d.success);
-        if(d.success) { document.getElementById(formId).reset(); setTimeout(function(){ location.href='/'; }, 600); }
+        if(d.success) document.getElementById(formId).reset();
     } catch(e) { st('网络错误',false); }
     btn.disabled=false;
     btn.innerHTML='<i class="bi bi-check-lg"></i> '+(isBatch?'批量添加':'添加物料');
