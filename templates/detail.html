@@ -41,12 +41,19 @@
                     onclick="completeActiveAS()">
                     <i class="bi bi-check-lg"></i> 完成售后
                 </button>
-                {% else %}
+                {% elif material.status == '已出库' %}
                 <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
                     <i class="bi bi-truck"></i> 出库
                 </button>
                 <button class="btn btn-success btn-sm me-2" id="btnRestock" onclick="doRestock()">
                     <i class="bi bi-box-arrow-in-down"></i> 在库
+                </button>
+                <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
+                    <i class="bi bi-tools"></i> 售后
+                </button>
+                {% else %}
+                <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
+                    <i class="bi bi-truck"></i> 出库
                 </button>
                 <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
                     <i class="bi bi-tools"></i> 售后
