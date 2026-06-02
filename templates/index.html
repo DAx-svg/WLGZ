@@ -58,7 +58,7 @@
 
     <!-- 统计卡片 -->
     <div class="row g-2 mb-3">
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-primary" style="cursor:pointer;" onclick="window.location='/'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-primary">{{ total_all }}</div>
@@ -66,7 +66,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-success" style="cursor:pointer;" onclick="window.location='/?status=在库'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-success">{{ stats.in_stock }}</div>
@@ -74,7 +74,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-warning" style="cursor:pointer;" onclick="window.location='/?status=已出库'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-warning">{{ stats.outbound }}</div>
@@ -82,7 +82,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-danger" style="cursor:pointer;" onclick="window.location='/?status=售后中'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-danger">{{ stats.after_sales }}</div>
@@ -90,7 +90,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-info" style="cursor:pointer;" onclick="window.location='/?month_in=1'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-info">{{ stats.month_in }}</div>
@@ -98,11 +98,27 @@
                 </div>
             </div>
         </div>
-        <div class="col-4 col-md-2">
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-secondary" style="cursor:pointer;" onclick="window.location='/?month_out=1'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-secondary">{{ stats.month_out }}</div>
                     <small class="text-muted">本月出库</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-4 col-sm-3 col-md-2">
+            <div class="card text-center border-danger" style="cursor:pointer;" onclick="window.location='/?month_as_new=1'">
+                <div class="card-body py-2">
+                    <div class="fs-4 fw-bold" style="color:#e74c3c;">{{ stats.month_as_new }}</div>
+                    <small class="text-muted">本月新增售后</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-4 col-sm-3 col-md-2">
+            <div class="card text-center border-success" style="cursor:pointer;" onclick="window.location='/?month_as_done=1'">
+                <div class="card-body py-2">
+                    <div class="fs-4 fw-bold" style="color:#27ae60;">{{ stats.month_as_done }}</div>
+                    <small class="text-muted">本月完成售后</small>
                 </div>
             </div>
         </div>
@@ -197,7 +213,7 @@
     </div>
     {% endfor %}
 
-    <!-- 物料表格 -->
+    <!-- 物料/售后记录表格 -->
     <div class="card shadow-sm mt-3">
         <div class="card-header d-flex justify-content-between">
             <span>
@@ -207,15 +223,51 @@
                 {% if current_cat %}按品类筛选：{% endif %}
                 {% if show_month_in %}本月入库物料：{% endif %}
                 {% if show_month_out %}本月出库物料：{% endif %}
-                {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out %}全部物料：{% endif %}
-                <strong>{{ materials|length }}</strong> 件物料
+                {% if show_month_as_new %}本月新增售后：{% endif %}
+                {% if show_month_as_done %}本月完成售后：{% endif %}
+                {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done %}全部物料：{% endif %}
+                <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
             </span>
             <div>
+                {% if not show_month_as_new and not show_month_as_done %}
                 <button class="btn btn-danger btn-sm me-2" id="batchDelBtn" onclick="batchDelete()" disabled>🗑 批量删除选中</button>
+                {% endif %}
                 <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
             </div>
         </div>
         <div class="card-body p-0">
+            {% if show_month_as_new or show_month_as_done %}
+            <!-- 售后记录表格 -->
+            {% if as_records %}
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr><th>SN</th><th>品类</th><th>客户</th><th>联系方式</th><th>{% if show_month_as_new %}问题描述{% else %}处理备注{% endif %}</th><th>{% if show_month_as_new %}创建时间{% else %}完成时间{% endif %}</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for a in as_records %}
+                        <tr>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ a.sn }}</span></td>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row">
+                                {% if a.cat_name %}{{ a.parent_name or '' }} → {{ a.cat_name }}{% else %}<span class="text-muted">-</span>{% endif %}
+                            </td>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row">{{ a.customer_name or '-' }}</td>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row">{{ a.customer_contact or '-' }}</td>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row">{% if show_month_as_new %}{{ a.problem_description or '-' }}{% else %}{{ a.remarks or '-' }}{% endif %}</td>
+                            <td onclick="window.location.href='/detail/{{ a.sn }}'" class="clickable-row">{% if show_month_as_new %}{{ a.created_time }}{% else %}{{ a.completed_time }}{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-tools" style="font-size:3rem;"></i>
+                <p class="mt-2">暂无相关售后记录</p>
+            </div>
+            {% endif %}
+            {% else %}
+            <!-- 物料表格 -->
             {% if materials %}
             <div class="table-responsive">
                 <table class="table table-hover table-striped mb-0">
@@ -253,6 +305,7 @@
                 <i class="bi bi-inbox" style="font-size:3rem;"></i>
                 <p class="mt-2">暂无匹配物料</p>
             </div>
+            {% endif %}
             {% endif %}
         </div>
     </div>

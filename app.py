@@ -128,6 +128,11 @@ def init_db():
         db.execute("ALTER TABLE outbound_records ADD COLUMN purpose_detail TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # v2.2: 售后完成时间
+    try:
+        db.execute("ALTER TABLE after_sales_records ADD COLUMN completed_time TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     db.commit()
 
 
@@ -354,6 +359,43 @@ def index():
         "SELECT COUNT(DISTINCT sn) AS cnt FROM outbound_records WHERE outbound_time LIKE ?",
         (f'{this_month}%',)
     ).fetchone()['cnt']
+    stats['month_as_new'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM after_sales_records WHERE created_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+    stats['month_as_done'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM after_sales_records WHERE completed_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+
+    # 售后记录筛选参数
+    show_month_as_new = request.args.get('month_as_new', '').strip()
+    show_month_as_done = request.args.get('month_as_done', '').strip()
+    as_records = []
+    if show_month_as_new:
+        as_records = db.execute("""
+            SELECT a.*, m.category_id, c.name AS cat_name, p.name AS parent_name,
+                   (SELECT o.customer_name FROM outbound_records o WHERE o.sn=a.sn ORDER BY o.outbound_time DESC LIMIT 1) AS customer_name,
+                   (SELECT o.customer_contact FROM outbound_records o WHERE o.sn=a.sn ORDER BY o.outbound_time DESC LIMIT 1) AS customer_contact
+            FROM after_sales_records a
+            JOIN materials m ON a.sn = m.sn
+            LEFT JOIN categories c ON m.category_id = c.id
+            LEFT JOIN categories p ON c.parent_id = p.id
+            WHERE a.created_time LIKE ?
+            ORDER BY a.created_time DESC
+        """, (f'{this_month}%',)).fetchall()
+    elif show_month_as_done:
+        as_records = db.execute("""
+            SELECT a.*, m.category_id, c.name AS cat_name, p.name AS parent_name,
+                   (SELECT o.customer_name FROM outbound_records o WHERE o.sn=a.sn ORDER BY o.outbound_time DESC LIMIT 1) AS customer_name,
+                   (SELECT o.customer_contact FROM outbound_records o WHERE o.sn=a.sn ORDER BY o.outbound_time DESC LIMIT 1) AS customer_contact
+            FROM after_sales_records a
+            JOIN materials m ON a.sn = m.sn
+            LEFT JOIN categories c ON m.category_id = c.id
+            LEFT JOIN categories p ON c.parent_id = p.id
+            WHERE a.completed_time LIKE ?
+            ORDER BY a.completed_time DESC
+        """, (f'{this_month}%',)).fetchall()
 
     return render_template('index.html',
                            categories=categories,
@@ -364,6 +406,9 @@ def index():
                            filter_status=filter_status,
                            show_month_in=show_month_in,
                            show_month_out=show_month_out,
+                           show_month_as_new=show_month_as_new,
+                           show_month_as_done=show_month_as_done,
+                           as_records=as_records,
                            total_all=total_all,
                            orphan=orphan,
                            stats=stats)
@@ -674,12 +719,21 @@ def api_aftersales_complete(record_id):
     if record['status'] == '已完成':
         return jsonify({'success': False, 'message': '已完成，无需重复操作'}), 400
     data = request.get_json(force=True)
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "UPDATE after_sales_records SET send_back_courier=?, send_back_tracking=?, "
-        "status='已完成', remarks=? WHERE id=?",
+        "status='已完成', completed_time=?, remarks=? WHERE id=?",
         (data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
-         data.get('remarks', ''), record_id))
-    db.execute("UPDATE materials SET status='在库' WHERE sn=?", (record['sn'],))
+         now, data.get('remarks', ''), record_id))
+    # 售后完成：创建出库记录（售后返客户）并设置状态为已出库
+    db.execute(
+        "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+        "courier_company, tracking_number, customer_name, customer_contact, remarks) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (record['sn'], now, '售后返客户', '',
+         data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
+         '', '', '售后工单 #' + str(record_id) + ' 完成后返还客户'))
+    db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (record['sn'],))
     db.commit()
     return jsonify({'success': True, 'message': '售后工单已完成'})
 
