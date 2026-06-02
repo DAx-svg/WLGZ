@@ -188,8 +188,8 @@
     <div class="col-md-3"><label class="form-label">软件版本</label><input class="form-control" id="editSw" value="{{ material.sw_version }}"></div>
     <div class="col-6"><label class="form-label">硬件功能描述</label><textarea class="form-control" id="editHwDesc" rows="2">{{ material.hw_description or '' }}</textarea></div>
     <div class="col-6"><label class="form-label">软件功能描述</label><textarea class="form-control" id="editSwDesc" rows="2">{{ material.sw_description or '' }}</textarea></div>
-    <div class="col-8"><label class="form-label">备注</label><input class="form-control" id="editRemarks" value="{{ material.remarks or '' }}"></div>
-    <div class="col-4"><label class="form-label">版本变更说明</label><input class="form-control" id="editChangeDesc" placeholder="如版本号有变，填原因"></div>
+    <div class="col-12"><label class="form-label">备注</label><textarea class="form-control" id="editRemarks" rows="2">{{ material.remarks or '' }}</textarea></div>
+    <div class="col-12"><label class="form-label">版本变更说明</label><textarea class="form-control" id="editChangeDesc" rows="2" placeholder="如版本号有变，填原因"></textarea></div>
 </div></div>
 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" id="editBtn" type="submit">保存</button></div>
 </form></div></div></div>
