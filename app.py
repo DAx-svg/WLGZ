@@ -686,8 +686,11 @@ def api_outbound(sn):
 def api_restock(sn):
     """物料重新入库（状态改回在库）"""
     db = get_db()
-    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+    material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+    if not material:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    if material['status'] == '售后中':
+        return jsonify({'success': False, 'message': '售后中的物料不能直接入库，请先完成售后'}), 400
     db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': f'{sn} 已重新入库'})
@@ -698,6 +701,12 @@ def api_aftersales(sn):
     db = get_db()
     if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    # 检查是否已有处理中的售后工单
+    active = db.execute(
+        "SELECT id FROM after_sales_records WHERE sn=? AND status='处理中'", (sn,)
+    ).fetchone()
+    if active:
+        return jsonify({'success': False, 'message': f'该物料已有售后工单 #{active["id"]} 处理中，请先完成后再创建'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
