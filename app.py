@@ -637,6 +637,17 @@ def api_outbound(sn):
     return jsonify({'success': True, 'message': '出库操作完成'})
 
 
+@app.route('/api/restock/<sn>', methods=['POST'])
+def api_restock(sn):
+    """物料重新入库（状态改回在库）"""
+    db = get_db()
+    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+        return jsonify({'success': False, 'message': '物料不存在'}), 404
+    db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
+    db.commit()
+    return jsonify({'success': True, 'message': f'{sn} 已重新入库'})
+
+
 @app.route('/api/aftersales/<sn>', methods=['POST'])
 def api_aftersales(sn):
     db = get_db()

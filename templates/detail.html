@@ -33,6 +33,9 @@
                 <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
                     <i class="bi bi-truck"></i> 出库
                 </button>
+                <button class="btn btn-success btn-sm me-2" id="btnRestock" onclick="doRestock()">
+                    <i class="bi bi-box-arrow-in-down"></i> 在库
+                </button>
                 <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
                     <i class="bi bi-tools"></i> 售后
                 </button>
@@ -183,11 +186,6 @@
     </div>
     <div class="col-md-3"><label class="form-label">硬件版本</label><input class="form-control" id="editHw" value="{{ material.hw_version }}"></div>
     <div class="col-md-3"><label class="form-label">软件版本</label><input class="form-control" id="editSw" value="{{ material.sw_version }}"></div>
-    <div class="col-md-3"><label class="form-label">状态</label><select class="form-select" id="editStatus">
-        <option value="在库" {% if material.status=='在库' %}selected{% endif %}>在库</option>
-        <option value="已出库" {% if material.status=='已出库' %}selected{% endif %}>已出库</option>
-        <option value="售后中" {% if material.status=='售后中' %}selected{% endif %}>售后中</option>
-    </select></div>
     <div class="col-6"><label class="form-label">硬件功能描述</label><textarea class="form-control" id="editHwDesc" rows="2">{{ material.hw_description or '' }}</textarea></div>
     <div class="col-6"><label class="form-label">软件功能描述</label><textarea class="form-control" id="editSwDesc" rows="2">{{ material.sw_description or '' }}</textarea></div>
     <div class="col-8"><label class="form-label">备注</label><input class="form-control" id="editRemarks" value="{{ material.remarks or '' }}"></div>
@@ -260,7 +258,7 @@ async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<s
 
 // 编辑
 document.getElementById('editForm').addEventListener('submit',function(e){e.preventDefault();
-    post('/api/material/edit/'+SN,{hw_version:document.getElementById('editHw').value,sw_version:document.getElementById('editSw').value,status:document.getElementById('editStatus').value,category_id:document.getElementById('editCat').value||null,hw_description:document.getElementById('editHwDesc').value,sw_description:document.getElementById('editSwDesc').value,remarks:document.getElementById('editRemarks').value,change_description:document.getElementById('editChangeDesc').value},'editModal',document.getElementById('editBtn'));});
+    post('/api/material/edit/'+SN,{hw_version:document.getElementById('editHw').value,sw_version:document.getElementById('editSw').value,category_id:document.getElementById('editCat').value||null,hw_description:document.getElementById('editHwDesc').value,sw_description:document.getElementById('editSwDesc').value,remarks:document.getElementById('editRemarks').value,change_description:document.getElementById('editChangeDesc').value},'editModal',document.getElementById('editBtn'));});
 // 出库用途切换
 document.getElementById('outPurpose').addEventListener('change',function(){
     var p=this.value;
@@ -276,6 +274,18 @@ document.getElementById('outForm').addEventListener('submit',function(e){e.preve
     if(purpose==='售后出库') purpose_detail=document.getElementById('outPurposeDetailAS').value;
     else if(purpose==='测试出库') purpose_detail=document.getElementById('outPurposeDetailTest').value;
     post('/api/outbound/'+SN,{purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
+// 在库
+async function doRestock(){
+    var btn=document.getElementById('btnRestock');
+    btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
+    try{
+        var r=await fetch('/api/restock/'+SN,{method:'POST'});
+        var d=await r.json();
+        st(d.message,d.success);
+        if(d.success) reload();
+    }catch(e){st('网络错误',false);}
+    btn.disabled=false; btn.innerHTML='<i class="bi bi-box-arrow-in-down"></i> 在库';
+}
 // 售后
 document.getElementById('asForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/'+SN,{return_courier:document.getElementById('asCourier').value,return_tracking:document.getElementById('asTracking').value,problem_description:document.getElementById('asProblem').value},'aftersalesModal',document.getElementById('asBtn'));});
