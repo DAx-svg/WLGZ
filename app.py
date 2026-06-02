@@ -351,7 +351,7 @@ def index():
         (f'{this_month}%',)
     ).fetchone()['cnt']
     stats['month_out'] = db.execute(
-        "SELECT COUNT(*) AS cnt FROM outbound_records WHERE outbound_time LIKE ?",
+        "SELECT COUNT(DISTINCT sn) AS cnt FROM outbound_records WHERE outbound_time LIKE ?",
         (f'{this_month}%',)
     ).fetchone()['cnt']
 
