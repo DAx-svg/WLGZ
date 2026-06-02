@@ -116,12 +116,13 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>时间</th><th>快递</th><th>单号</th><th>客户</th><th>联系方式</th><th>备注</th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>快递</th><th>单号</th><th>客户</th><th>联系方式</th><th>备注</th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
+                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
                     <td>{{ o.outbound_time }}</td><td>{{ o.courier_company or '-' }}</td>
                     <td><code>{{ o.tracking_number or '-' }}</code></td>
                     <td>{{ o.customer_name or '-' }}</td><td>{{ o.customer_contact or '-' }}</td>
-                    <td>{{ o.remarks or '-' }}</td>
+                    <td>{% if o.purpose_detail %}<small class="text-muted">{{ o.purpose_detail }}</small>{% endif %}{% if o.remarks %}<br><small>{{ o.remarks }}</small>{% elif not o.purpose_detail %}-{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><i class="bi bi-truck" style="font-size:3rem;"></i><p>暂无出库记录</p></div>{% endif %}
@@ -199,10 +200,30 @@
 <div class="modal fade" id="outboundModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
 <div class="modal-header bg-warning"><h5 class="modal-title">出库 - {{ material.sn }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
 <form id="outForm"><div class="modal-body">
-    <div class="mb-2"><label class="form-label">快递公司</label><input class="form-control" id="outCourier" required></div>
-    <div class="mb-2"><label class="form-label">快递单号</label><input class="form-control" id="outTracking" required></div>
-    <div class="mb-2"><label class="form-label">客户名称</label><input class="form-control" id="outCustomer" required></div>
-    <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact"></div>
+    <div class="mb-3"><label class="form-label">出库用途 <span class="text-danger">*</span></label>
+        <select class="form-select" id="outPurpose" required>
+            <option value="">-- 请选择 --</option>
+            <option value="销售出库">销售出库</option>
+            <option value="售后出库">售后出库</option>
+            <option value="测试出库">测试出库</option>
+        </select>
+    </div>
+    <!-- 客户信息（销售/售后显示） -->
+    <div id="outCustomerGroup" style="display:none;">
+        <div class="mb-2"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer"></div>
+        <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact"></div>
+    </div>
+    <!-- 售后原因（售后显示） -->
+    <div id="outAfterSalesReason" style="display:none;">
+        <div class="mb-2"><label class="form-label">售后原因 <span class="text-danger">*</span></label><textarea class="form-control" id="outPurposeDetailAS" rows="2" placeholder="请说明售后原因"></textarea></div>
+    </div>
+    <!-- 测试原因（测试显示） -->
+    <div id="outTestReason" style="display:none;">
+        <div class="mb-2"><label class="form-label">测试原因 <span class="text-danger">*</span></label><textarea class="form-control" id="outPurposeDetailTest" rows="2" placeholder="请说明测试原因"></textarea></div>
+    </div>
+    <hr>
+    <div class="mb-2"><label class="form-label">快递公司</label><input class="form-control" id="outCourier"></div>
+    <div class="mb-2"><label class="form-label">快递单号</label><input class="form-control" id="outTracking"></div>
     <div class="mb-2"><label class="form-label">备注</label><textarea class="form-control" id="outRemarks" rows="2"></textarea></div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-warning" id="outBtn" type="submit">确认出库</button></div>
 </form></div></div></div>
@@ -240,9 +261,21 @@ async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<s
 // 编辑
 document.getElementById('editForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/material/edit/'+SN,{hw_version:document.getElementById('editHw').value,sw_version:document.getElementById('editSw').value,status:document.getElementById('editStatus').value,category_id:document.getElementById('editCat').value||null,hw_description:document.getElementById('editHwDesc').value,sw_description:document.getElementById('editSwDesc').value,remarks:document.getElementById('editRemarks').value,change_description:document.getElementById('editChangeDesc').value},'editModal',document.getElementById('editBtn'));});
+// 出库用途切换
+document.getElementById('outPurpose').addEventListener('change',function(){
+    var p=this.value;
+    document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库')?'':'none';
+    document.getElementById('outAfterSalesReason').style.display=(p==='售后出库')?'':'none';
+    document.getElementById('outTestReason').style.display=(p==='测试出库')?'':'none';
+});
 // 出库
 document.getElementById('outForm').addEventListener('submit',function(e){e.preventDefault();
-    post('/api/outbound/'+SN,{courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
+    var purpose=document.getElementById('outPurpose').value;
+    if(!purpose){st('请选择出库用途',false);return;}
+    var purpose_detail='';
+    if(purpose==='售后出库') purpose_detail=document.getElementById('outPurposeDetailAS').value;
+    else if(purpose==='测试出库') purpose_detail=document.getElementById('outPurposeDetailTest').value;
+    post('/api/outbound/'+SN,{purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
 // 售后
 document.getElementById('asForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/'+SN,{return_courier:document.getElementById('asCourier').value,return_tracking:document.getElementById('asTracking').value,problem_description:document.getElementById('asProblem').value},'aftersalesModal',document.getElementById('asBtn'));});

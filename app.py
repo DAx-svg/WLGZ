@@ -74,6 +74,8 @@ def init_db():
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             sn              TEXT NOT NULL,
             outbound_time   TEXT NOT NULL,
+            purpose         TEXT DEFAULT '',
+            purpose_detail  TEXT DEFAULT '',
             courier_company TEXT DEFAULT '',
             tracking_number TEXT DEFAULT '',
             customer_name   TEXT DEFAULT '',
@@ -115,6 +117,15 @@ def init_db():
     # 兼容旧数据库：category_id 列如果不存在则添加
     try:
         db.execute("ALTER TABLE materials ADD COLUMN category_id INTEGER DEFAULT NULL")
+    except sqlite3.OperationalError:
+        pass
+    # v2.1: 出库用途
+    try:
+        db.execute("ALTER TABLE outbound_records ADD COLUMN purpose TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        db.execute("ALTER TABLE outbound_records ADD COLUMN purpose_detail TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
     db.commit()
@@ -614,10 +625,11 @@ def api_outbound(sn):
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
-        "INSERT INTO outbound_records (sn, outbound_time, courier_company, "
-        "tracking_number, customer_name, customer_contact, remarks) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (sn, now, data.get('courier_company', ''), data.get('tracking_number', ''),
+        "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+        "courier_company, tracking_number, customer_name, customer_contact, remarks) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (sn, now, data.get('purpose', ''), data.get('purpose_detail', ''),
+         data.get('courier_company', ''), data.get('tracking_number', ''),
          data.get('customer_name', ''), data.get('customer_contact', ''),
          data.get('remarks', '')))
     db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))

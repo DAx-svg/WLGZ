@@ -34,6 +34,7 @@
                         <tr>
                             <th>SN</th>
                             <th>品类</th>
+                            <th>用途</th>
                             <th>出库时间</th>
                             <th>快递公司</th>
                             <th>快递单号</th>
@@ -51,6 +52,13 @@
                             <td>
                                 {% if o.cat_name %}
                                 {{ o.parent_name or '' }} → {{ o.cat_name }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if o.purpose %}
+                                <span class="badge bg-info text-dark">{{ o.purpose }}</span>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
