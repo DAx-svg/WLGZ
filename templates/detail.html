@@ -273,7 +273,7 @@
 <script>
 const SN="{{ material.sn }}";
 function completeActiveAS(){
-    document.getElementById('completeId').value={%- for a in aftersales -%}{% if a.status == '处理中' %}{{ a.id }}{% endif %}{%- endfor -%}||0;
+    document.getElementById('completeId').value={{ active_as_id }};
 }
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
 function reload(){setTimeout(()=>location.reload(),800);}

@@ -444,12 +444,26 @@ def detail(sn):
         "WHERE c.parent_id IS NOT NULL ORDER BY p.id, c.id"
     ).fetchall()
 
+    # 查找活跃的售后工单 ID，同时清理多余的活跃记录（只保留最新一条）
+    active = db.execute(
+        "SELECT id FROM after_sales_records WHERE sn=? AND status='处理中' ORDER BY created_time DESC",
+        (sn,)
+    ).fetchall()
+    if len(active) > 1:
+        # 关闭多余的活跃记录
+        for a in active[1:]:
+            db.execute("UPDATE after_sales_records SET status='已完成', completed_time=? WHERE id=?",
+                       (datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S'), a['id']))
+        db.commit()
+    active_as_id = active[0]['id'] if active else 0
+
     return render_template('detail.html',
                            material=material,
                            outbounds=outbounds,
                            aftersales=aftersales,
                            version_changes=version_changes,
-                           cats=cats)
+                           cats=cats,
+                           active_as_id=active_as_id)
 
 
 @app.route('/outbounds')
