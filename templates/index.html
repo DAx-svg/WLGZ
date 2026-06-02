@@ -210,7 +210,10 @@
                 {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out %}全部物料：{% endif %}
                 <strong>{{ materials|length }}</strong> 件物料
             </span>
-            <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
+            <div>
+                <button class="btn btn-danger btn-sm me-2" id="batchDelBtn" onclick="batchDelete()" disabled>🗑 批量删除选中</button>
+                <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
+            </div>
         </div>
         <div class="card-body p-0">
             {% if materials %}
@@ -218,12 +221,14 @@
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
                         <tr>
+                            <th style="width:40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
                             <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th><th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for m in materials %}
                         <tr>
+                            <td><input type="checkbox" class="mat-cb" value="{{ m.sn }}" onchange="updateBatchDelBtn()"></td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ m.sn }}</span></td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.hw_version or '-' }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.sw_version or '-' }}</td>
@@ -353,6 +358,30 @@ async function deleteMaterial(sn) {
     const data = await resp.json();
     showToast(data.message, data.success);
     if (data.success) setTimeout(() => location.reload(), 500);
+}
+
+// ======= 批量删除 =======
+function toggleSelectAll() {
+    var checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.mat-cb').forEach(cb => cb.checked = checked);
+    updateBatchDelBtn();
+}
+function updateBatchDelBtn() {
+    var any = document.querySelectorAll('.mat-cb:checked').length > 0;
+    document.getElementById('batchDelBtn').disabled = !any;
+}
+async function batchDelete() {
+    var cbs = document.querySelectorAll('.mat-cb:checked');
+    if (!cbs.length) return;
+    var sns = Array.from(cbs).map(cb => cb.value);
+    if (!confirm('确定删除选中的 ' + sns.length + ' 个物料？此操作不可恢复！')) return;
+    var resp = await fetch('/api/material/batch_delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({sns: sns})
+    });
+    var data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(() => location.reload(), 600);
 }
 
 // ======= 品类管理 =======

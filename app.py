@@ -674,6 +674,27 @@ def api_delete_material(sn):
     return jsonify({'success': True, 'message': f'物料 {sn} 已删除'})
 
 
+@app.route('/api/material/batch_delete', methods=['POST'])
+def api_batch_delete():
+    db = get_db()
+    data = request.get_json(force=True)
+    sns = data.get('sns', [])
+    if not sns:
+        return jsonify({'success': False, 'message': '未选择物料'}), 400
+    existing = [r['sn'] for r in db.execute(
+        "SELECT sn FROM materials WHERE sn IN ({})".format(','.join('?' * len(sns))), sns
+    ).fetchall()]
+    if not existing:
+        return jsonify({'success': False, 'message': '物料不存在'}), 404
+    for sn in existing:
+        db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
+        db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
+        db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
+    db.execute("DELETE FROM materials WHERE sn IN ({})".format(','.join('?' * len(existing))), existing)
+    db.commit()
+    return jsonify({'success': True, 'message': f'已删除 {len(existing)} 个物料'})
+
+
 @app.route('/api/check_sn/<sn>')
 def api_check_sn(sn):
     db = get_db()
