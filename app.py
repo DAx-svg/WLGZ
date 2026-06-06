@@ -80,6 +80,8 @@ def init_db():
             tracking_number TEXT DEFAULT '',
             customer_name   TEXT DEFAULT '',
             customer_contact TEXT DEFAULT '',
+            customer_company TEXT DEFAULT '',
+            address         TEXT DEFAULT '',
             remarks         TEXT DEFAULT '',
             FOREIGN KEY (sn) REFERENCES materials(sn)
         );
@@ -132,6 +134,12 @@ def init_db():
         db.execute("ALTER TABLE materials ADD COLUMN category_id INTEGER DEFAULT NULL")
     except sqlite3.OperationalError:
         pass
+    # 兼容旧数据库：customer_company / address 列
+    for col in ('customer_company', 'address'):
+        try:
+            db.execute(f"ALTER TABLE outbound_records ADD COLUMN {col} TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     # v2.1: 出库用途
     try:
         db.execute("ALTER TABLE outbound_records ADD COLUMN purpose TEXT DEFAULT ''")
@@ -213,8 +221,9 @@ def insert_sample_data():
     for o in outbounds:
         db.execute(
             "INSERT INTO outbound_records (sn, outbound_time, courier_company, "
-            "tracking_number, customer_name, customer_contact, remarks) "
-            "VALUES (?,?,?,?,?,?,?)", o
+            "tracking_number, customer_name, customer_contact, "
+            "customer_company, address, remarks) "
+            "VALUES (?,?,?,?,?,?,'','',?)", o
         )
 
     # ---- 示例售后 ----
@@ -786,11 +795,13 @@ def api_outbound(sn):
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
         "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-        "courier_company, tracking_number, customer_name, customer_contact, remarks) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "courier_company, tracking_number, customer_name, customer_contact, "
+        "customer_company, address, remarks) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (sn, now, data.get('purpose', ''), data.get('purpose_detail', ''),
          data.get('courier_company', ''), data.get('tracking_number', ''),
          data.get('customer_name', ''), data.get('customer_contact', ''),
+         data.get('customer_company', ''), data.get('address', ''),
          data.get('remarks', '')))
     db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
     db.commit()
@@ -807,10 +818,12 @@ def api_outbound_edit(record_id):
     data = request.get_json(force=True)
     db.execute(
         "UPDATE outbound_records SET purpose=?, purpose_detail=?, courier_company=?, "
-        "tracking_number=?, customer_name=?, customer_contact=?, remarks=? WHERE id=?",
+        "tracking_number=?, customer_name=?, customer_contact=?, "
+        "customer_company=?, address=?, remarks=? WHERE id=?",
         (data.get('purpose', ''), data.get('purpose_detail', ''),
          data.get('courier_company', ''), data.get('tracking_number', ''),
          data.get('customer_name', ''), data.get('customer_contact', ''),
+         data.get('customer_company', ''), data.get('address', ''),
          data.get('remarks', ''), record_id))
     db.commit()
     return jsonify({'success': True, 'message': '出库记录已更新'})
@@ -873,11 +886,12 @@ def api_aftersales_complete(record_id):
     # 售后完成：创建出库记录（售后返客户）并设置状态为已出库
     db.execute(
         "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-        "courier_company, tracking_number, customer_name, customer_contact, remarks) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "courier_company, tracking_number, customer_name, customer_contact, "
+        "customer_company, address, remarks) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (record['sn'], now, '售后返客户', '',
          data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
-         '', '', '售后工单 #' + str(record_id) + ' 完成后返还客户'))
+         '', '', '', '', '售后工单 #' + str(record_id) + ' 完成后返还客户'))
     db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (record['sn'],))
     db.commit()
     return jsonify({'success': True, 'message': '售后工单已完成'})
@@ -1052,14 +1066,18 @@ def api_outbound_batch():
     tracking = data.get('tracking_number', '')
     customer = data.get('customer_name', '')
     contact = data.get('customer_contact', '')
+    company = data.get('customer_company', '')
+    address = data.get('address', '')
     remarks = data.get('remarks', '')
 
     for sn in sns:
         db.execute(
             "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-            "courier_company, tracking_number, customer_name, customer_contact, remarks) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (sn, now, purpose, purpose_detail, courier, tracking, customer, contact, remarks))
+            "courier_company, tracking_number, customer_name, customer_contact, "
+            "customer_company, address, remarks) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
+             company, address, remarks))
         db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': f'已批量出库 {len(sns)} 个物料'})

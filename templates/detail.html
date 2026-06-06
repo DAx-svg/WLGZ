@@ -161,15 +161,19 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>快递</th><th>单号</th><th>客户</th><th>联系方式</th><th>备注</th><th style="width:50px;"></th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>客户</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:50px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
                     <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
-                    <td>{{ o.outbound_time }}</td><td>{{ o.courier_company or '-' }}</td>
+                    <td class="text-nowrap">{{ o.outbound_time }}</td>
+                    <td>{{ o.customer_name or '-' }}</td>
+                    <td>{{ o.customer_company or '-' }}</td>
+                    <td>{{ o.customer_contact or '-' }}</td>
+                    <td><small class="text-muted">{{ o.address or '-' }}</small></td>
+                    <td>{{ o.courier_company or '-' }}</td>
                     <td><code>{{ o.tracking_number or '-' }}</code></td>
-                    <td>{{ o.customer_name or '-' }}</td><td>{{ o.customer_contact or '-' }}</td>
-                    <td>{% if o.purpose_detail %}<small class="text-muted">{{ o.purpose_detail }}</small>{% endif %}{% if o.remarks %}<br><small>{{ o.remarks }}</small>{% elif not o.purpose_detail %}-{% endif %}</td>
+                    <td><small class="text-muted">{{ o.remarks or '-' }}</small></td>
                     <td><button class="btn btn-outline-secondary btn-sm" title="编辑出库记录"
-                        onclick="editOutbound({{ o.id }},'{{ o.purpose }}','{{ o.purpose_detail or '' }}','{{ o.courier_company or '' }}','{{ o.tracking_number or '' }}','{{ o.customer_name or '' }}','{{ o.customer_contact or '' }}','{{ o.remarks or '' }}')"><i class="bi bi-pencil"></i></button></td>
+                        onclick="editOutbound({{ o.id }},'{{ o.purpose }}','{{ o.purpose_detail or '' }}','{{ o.courier_company or '' }}','{{ o.tracking_number or '' }}','{{ o.customer_name or '' }}','{{ o.customer_contact or '' }}','{{ o.customer_company or '' }}','{{ o.address or '' }}','{{ o.remarks or '' }}')"><i class="bi bi-pencil"></i></button></td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><i class="bi bi-truck" style="font-size:3rem;"></i><p>暂无出库记录</p></div>{% endif %}
@@ -279,11 +283,13 @@
     </div>
     <!-- 客户信息（销售/售后显示） -->
     <div id="outCustomerGroup" style="display:none;">
-        <div class="mb-2"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer"></div>
-        <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact"></div>
+        <div class="mb-2"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer" placeholder="收货人姓名"></div>
+        <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact" placeholder="手机/电话"></div>
+        <div class="mb-2"><label class="form-label">公司名称</label><input class="form-control" id="outCompany" placeholder="客户公司抬头"></div>
+        <div class="mb-2"><label class="form-label">地址</label><input class="form-control" id="outAddress" placeholder="收货地址"></div>
         <a href="#" class="text-decoration-none small" onclick="document.getElementById('outSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
         <div id="outSmartBox" style="display:none;" class="mt-1">
-            <textarea class="form-control form-control-sm" id="outSmartInput" rows="2" placeholder="粘贴含客户信息的文本，自动识别姓名、电话、公司..."></textarea>
+            <textarea class="form-control form-control-sm" id="outSmartInput" rows="3" placeholder="粘贴含客户信息的文本，自动识别姓名、电话、公司、地址..."></textarea>
             <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillOutbound()">🔍 识别填充</button>
         </div>
     </div>
@@ -354,9 +360,19 @@
             <input type="text" class="form-control" id="editCustomerContact">
         </div>
     </div>
+    <div class="row g-2 mb-2">
+        <div class="col-6">
+            <label class="form-label">公司名称</label>
+            <input type="text" class="form-control" id="editCustomerCompany">
+        </div>
+        <div class="col-6">
+            <label class="form-label">地址</label>
+            <input type="text" class="form-control" id="editAddress">
+        </div>
+    </div>
     <a href="#" class="text-decoration-none small" onclick="document.getElementById('editSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
     <div id="editSmartBox" style="display:none;" class="mt-1 mb-2">
-        <textarea class="form-control form-control-sm" id="editSmartInput" rows="2" placeholder="粘贴含客户信息的文本..."></textarea>
+        <textarea class="form-control form-control-sm" id="editSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
         <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillEdit()">🔍 识别填充</button>
     </div>
     <div class="row g-2 mb-2">
@@ -458,10 +474,8 @@ function smartFillOutbound(){
     if(p.name)document.getElementById('outCustomer').value=p.name;
     else if(p.company)document.getElementById('outCustomer').value=p.company;
     if(p.contact)document.getElementById('outContact').value=p.contact;
-    var extras=[];
-    if(p.name&&p.company)extras.push('公司：'+p.company);
-    if(p.address)extras.push('地址：'+p.address);
-    if(extras.length){var f=document.getElementById('outRemarks');f.value=(f.value?f.value+'\n':'')+extras.join('\n');}
+    if(p.company)document.getElementById('outCompany').value=p.company;
+    if(p.address)document.getElementById('outAddress').value=p.address;
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
 function smartFillEdit(){
@@ -469,10 +483,8 @@ function smartFillEdit(){
     if(p.name)document.getElementById('editCustomerName').value=p.name;
     else if(p.company)document.getElementById('editCustomerName').value=p.company;
     if(p.contact)document.getElementById('editCustomerContact').value=p.contact;
-    var extras=[];
-    if(p.name&&p.company)extras.push('公司：'+p.company);
-    if(p.address)extras.push('地址：'+p.address);
-    if(extras.length){var f=document.getElementById('editRemarks');f.value=(f.value?f.value+'\n':'')+extras.join('\n');}
+    if(p.company)document.getElementById('editCustomerCompany').value=p.company;
+    if(p.address)document.getElementById('editAddress').value=p.address;
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
 async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';try{var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});var d=await r.json();st(d.message,d.success);if(d.success){if(modalId){bootstrap.Modal.getInstance(document.getElementById(modalId)).hide();}reload();}}catch(e){st('网络错误',false);}btn.disabled=false;}
@@ -494,7 +506,7 @@ document.getElementById('outForm').addEventListener('submit',function(e){e.preve
     var purpose_detail='';
     if(purpose==='售后出库') purpose_detail=document.getElementById('outPurposeDetailAS').value;
     else if(purpose==='测试出库') purpose_detail=document.getElementById('outPurposeDetailTest').value;
-    post('/api/outbound/'+SN,{purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
+    post('/api/outbound/'+SN,{purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,customer_company:document.getElementById('outCompany').value,address:document.getElementById('outAddress').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
 // 在库
 async function doRestock(){
     var btn=document.getElementById('btnRestock');
@@ -514,7 +526,7 @@ document.getElementById('asForm').addEventListener('submit',function(e){e.preven
 document.getElementById('compForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/complete/'+document.getElementById('completeId').value,{send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value},'completeModal',document.getElementById('compBtn'));});
 // 编辑出库记录
-function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,remarks){
+function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,customer_company,address,remarks){
     document.getElementById('editOutboundId').value=id;
     document.getElementById('editPurpose').value=purpose;
     document.getElementById('editPurposeDetail').value=purpose_detail;
@@ -522,6 +534,8 @@ function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,
     document.getElementById('editTrackingNumber').value=tracking_number;
     document.getElementById('editCustomerName').value=customer_name;
     document.getElementById('editCustomerContact').value=customer_contact;
+    document.getElementById('editCustomerCompany').value=customer_company;
+    document.getElementById('editAddress').value=address;
     document.getElementById('editRemarks').value=remarks;
     new bootstrap.Modal(document.getElementById('editOutboundModal')).show();
 }
@@ -535,6 +549,8 @@ document.getElementById('editOutboundForm').addEventListener('submit',function(e
         tracking_number:document.getElementById('editTrackingNumber').value.trim(),
         customer_name:document.getElementById('editCustomerName').value.trim(),
         customer_contact:document.getElementById('editCustomerContact').value.trim(),
+        customer_company:document.getElementById('editCustomerCompany').value.trim(),
+        address:document.getElementById('editAddress').value.trim(),
         remarks:document.getElementById('editRemarks').value.trim()
     };
     fetch('/api/outbound/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})

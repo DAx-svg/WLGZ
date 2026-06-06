@@ -126,9 +126,19 @@
                                 <input type="text" class="form-control" id="customerContact" placeholder="电话/微信">
                             </div>
                         </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">公司名称</label>
+                                <input type="text" class="form-control" id="customerCompany" placeholder="客户公司抬头">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">地址</label>
+                                <input type="text" class="form-control" id="customerAddress" placeholder="收货地址">
+                            </div>
+                        </div>
                         <a href="#" class="text-decoration-none small" onclick="document.getElementById('batchSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
                         <div id="batchSmartBox" style="display:none;" class="mt-1 mb-2">
-                            <textarea class="form-control form-control-sm" id="batchSmartInput" rows="2" placeholder="粘贴含客户信息的文本..."></textarea>
+                            <textarea class="form-control form-control-sm" id="batchSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
                             <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillBatch()">🔍 识别填充</button>
                         </div>
                         <div class="row g-2 mb-3">
@@ -204,10 +214,8 @@ function smartFillBatch(){
     if(p.name)document.getElementById('customerName').value=p.name;
     else if(p.company)document.getElementById('customerName').value=p.company;
     if(p.contact)document.getElementById('customerContact').value=p.contact;
-    var extras=[];
-    if(p.name&&p.company)extras.push('公司：'+p.company);
-    if(p.address)extras.push('地址：'+p.address);
-    if(extras.length){var f=document.getElementById('remarks');f.value=(f.value?f.value+'\n':'')+extras.join('\n');}
+    if(p.company)document.getElementById('customerCompany').value=p.company;
+    if(p.address)document.getElementById('customerAddress').value=p.address;
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
 
@@ -408,6 +416,8 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         purpose_detail: document.getElementById('purposeDetail').value.trim(),
         customer_name: document.getElementById('customerName').value.trim(),
         customer_contact: document.getElementById('customerContact').value.trim(),
+        customer_company: document.getElementById('customerCompany').value.trim(),
+        address: document.getElementById('customerAddress').value.trim(),
         courier_company: document.getElementById('courierCompany').value.trim(),
         tracking_number: document.getElementById('trackingNumber').value.trim(),
         remarks: document.getElementById('remarks').value.trim()

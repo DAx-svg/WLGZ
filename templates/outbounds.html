@@ -36,10 +36,12 @@
                             <th>品类</th>
                             <th>用途</th>
                             <th>出库时间</th>
+                            <th>客户</th>
+                            <th>公司</th>
+                            <th>联系方式</th>
+                            <th>地址</th>
                             <th>快递公司</th>
                             <th>快递单号</th>
-                            <th>客户</th>
-                            <th>联系方式</th>
                             <th>备注</th>
                         </tr>
                     </thead>
@@ -64,10 +66,12 @@
                                 {% endif %}
                             </td>
                             <td>{{ o.outbound_time }}</td>
+                            <td>{{ o.customer_name or '-' }}</td>
+                            <td>{{ o.customer_company or '-' }}</td>
+                            <td>{{ o.customer_contact or '-' }}</td>
+                            <td><small class="text-muted">{{ o.address or '-' }}</small></td>
                             <td>{{ o.courier_company or '-' }}</td>
                             <td><code>{{ o.tracking_number or '-' }}</code></td>
-                            <td>{{ o.customer_name or '-' }}</td>
-                            <td>{{ o.customer_contact or '-' }}</td>
                             <td class="text-muted">{{ o.remarks or '-' }}</td>
                         </tr>
                         {% endfor %}
