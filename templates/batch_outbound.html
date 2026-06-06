@@ -384,12 +384,12 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         st(d.message, d.success);
         if (d.success) {
             selected = {};
-            refreshList();
             document.getElementById('batchForm').reset();
             document.getElementById('purposeDetailBox').style.display = 'none';
         }
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';
+        if (d.success) refreshList();
     }).catch(function(){
         st('网络错误', false);
         btn.disabled = false;
