@@ -281,6 +281,11 @@
     <div id="outCustomerGroup" style="display:none;">
         <div class="mb-2"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer"></div>
         <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact"></div>
+        <a href="#" class="text-decoration-none small" onclick="document.getElementById('outSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
+        <div id="outSmartBox" style="display:none;" class="mt-1">
+            <textarea class="form-control form-control-sm" id="outSmartInput" rows="2" placeholder="粘贴含客户信息的文本，自动识别姓名、电话、公司..."></textarea>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillOutbound()">🔍 识别填充</button>
+        </div>
     </div>
     <!-- 售后原因（售后显示） -->
     <div id="outAfterSalesReason" style="display:none;">
@@ -349,6 +354,11 @@
             <input type="text" class="form-control" id="editCustomerContact">
         </div>
     </div>
+    <a href="#" class="text-decoration-none small" onclick="document.getElementById('editSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
+    <div id="editSmartBox" style="display:none;" class="mt-1 mb-2">
+        <textarea class="form-control form-control-sm" id="editSmartInput" rows="2" placeholder="粘贴含客户信息的文本..."></textarea>
+        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillEdit()">🔍 识别填充</button>
+    </div>
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">快递公司</label>
@@ -399,6 +409,40 @@ function completeActiveAS(){
 }
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
 function reload(){setTimeout(()=>location.reload(),800);}
+// ====== 智能解析客户信息 ======
+function smartParse(text){
+    var r={name:'',contact:'',company:''};
+    // 手机号
+    var m=text.match(/1[3-9]\d{9}/);
+    if(m)r.contact=m[0];
+    // 座机
+    if(!r.contact){m=text.match(/0\d{2,3}[-\s]?\d{7,8}/);if(m)r.contact=m[0];}
+    // 公司名
+    m=text.match(/([一-龥]{2,20}(?:公司|有限公司|集团|科技|电子|实业|通讯|智能|信息|网络))/);
+    if(m)r.company=m[0];
+    // 标签匹配：联系人/姓名
+    m=text.match(/(?:联系人|姓名|名字|收货人)[：:]\s*([一-龥]{2,4})/);
+    if(m)r.name=m[1];
+    // 标签匹配：电话/手机
+    if(!r.contact){m=text.match(/(?:电话|手机|联系方式)[：:]\s*(\d[\d\-\s]{6,15})/);if(m)r.contact=m[1].replace(/\s/g,'');}
+    // 标签匹配：公司
+    if(!r.company){m=text.match(/(?:公司|单位)[：:]\s*([一-龥]{2,20})/);if(m)r.company=m[1];}
+    // 第一行纯中文作姓名
+    if(!r.name){var lines=text.split(/[\n\r]+/);for(var i=0;i<lines.length;i++){var ln=lines[i].trim();var nm=ln.match(/^([一-龥]{2,4})$/);if(nm){r.name=nm[1];break;}}}
+    return r;
+}
+function smartFillOutbound(){
+    var p=smartParse(document.getElementById('outSmartInput').value);
+    if(p.name)document.getElementById('outCustomer').value=p.name;
+    if(p.contact)document.getElementById('outContact').value=p.contact;
+    if(!p.name&&!p.contact)st('未能识别到客户信息，请手动输入',false);
+}
+function smartFillEdit(){
+    var p=smartParse(document.getElementById('editSmartInput').value);
+    if(p.name)document.getElementById('editCustomerName').value=p.name;
+    if(p.contact)document.getElementById('editCustomerContact').value=p.contact;
+    if(!p.name&&!p.contact)st('未能识别到客户信息，请手动输入',false);
+}
 async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';try{var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});var d=await r.json();st(d.message,d.success);if(d.success){if(modalId){bootstrap.Modal.getInstance(document.getElementById(modalId)).hide();}reload();}}catch(e){st('网络错误',false);}btn.disabled=false;}
 
 // 编辑

@@ -126,6 +126,11 @@
                                 <input type="text" class="form-control" id="customerContact" placeholder="电话/微信">
                             </div>
                         </div>
+                        <a href="#" class="text-decoration-none small" onclick="document.getElementById('batchSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
+                        <div id="batchSmartBox" style="display:none;" class="mt-1 mb-2">
+                            <textarea class="form-control form-control-sm" id="batchSmartInput" rows="2" placeholder="粘贴含客户信息的文本..."></textarea>
+                            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillBatch()">🔍 识别填充</button>
+                        </div>
                         <div class="row g-2 mb-3">
                             <div class="col-6">
                                 <label class="form-label">快递公司</label>
@@ -173,6 +178,25 @@ let selected = {};  // {sn: status}
 
 // ====== Toast ======
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
+
+// ====== 智能解析客户信息 ======
+function smartParse(text){
+    var r={name:'',contact:'',company:''};
+    var m=text.match(/1[3-9]\d{9}/);if(m)r.contact=m[0];
+    if(!r.contact){m=text.match(/0\d{2,3}[-\s]?\d{7,8}/);if(m)r.contact=m[0];}
+    m=text.match(/([一-龥]{2,20}(?:公司|有限公司|集团|科技|电子|实业|通讯|智能|信息|网络))/);if(m)r.company=m[0];
+    m=text.match(/(?:联系人|姓名|名字|收货人)[：:]\s*([一-龥]{2,4})/);if(m)r.name=m[1];
+    if(!r.contact){m=text.match(/(?:电话|手机|联系方式)[：:]\s*(\d[\d\-\s]{6,15})/);if(m)r.contact=m[1].replace(/\s/g,'');}
+    if(!r.company){m=text.match(/(?:公司|单位)[：:]\s*([一-龥]{2,20})/);if(m)r.company=m[1];}
+    if(!r.name){var lines=text.split(/[\n\r]+/);for(var i=0;i<lines.length;i++){var ln=lines[i].trim();var nm=ln.match(/^([一-龥]{2,4})$/);if(nm){r.name=nm[1];break;}}}
+    return r;
+}
+function smartFillBatch(){
+    var p=smartParse(document.getElementById('batchSmartInput').value);
+    if(p.name)document.getElementById('customerName').value=p.name;
+    if(p.contact)document.getElementById('customerContact').value=p.contact;
+    if(!p.name&&!p.contact)st('未能识别到客户信息，请手动输入',false);
+}
 
 // ====== 品类筛选 ======
 function onParentChange() {
