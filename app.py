@@ -975,6 +975,22 @@ def api_search_sn():
                      'cat_name': r['cat_name'], 'parent_name': r['parent_name']} for r in rows])
 
 
+@app.route('/api/in_stock_sns')
+def api_in_stock_sns():
+    """返回指定小类下所有在库 SN（用于批量出库品类筛选）"""
+    cat_id = request.args.get('cat', '').strip()
+    if not cat_id:
+        return jsonify([])
+    db = get_db()
+    rows = db.execute(
+        "SELECT sn, status, hw_version, sw_version FROM materials "
+        "WHERE category_id=? AND status='在库' ORDER BY inbound_time DESC",
+        (cat_id,)
+    ).fetchall()
+    return jsonify([{'sn': r['sn'], 'status': r['status'],
+                     'hw_version': r['hw_version'], 'sw_version': r['sw_version']} for r in rows])
+
+
 @app.route('/api/outbound/batch', methods=['POST'])
 def api_outbound_batch():
     """批量出库：多个 SN 共用同一客户/快递/备注信息"""
