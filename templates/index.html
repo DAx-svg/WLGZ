@@ -144,12 +144,12 @@
 
     <!-- 品类导航栏 -->
     <div class="category-bar">
-        <span class="cat-pill {% if not current_cat and not search %}active{% endif %}"
+        <span class="cat-pill {% if not current_cat and not current_parent and not search %}active{% endif %}"
               onclick="window.location='/'">
             全部 <small class="text-muted text-nowrap">({{ total_all }})</small>
         </span>
         {% for cat in categories %}
-        <span class="cat-pill cat-parent" data-cid="{{ cat.id }}"
+        <span class="cat-pill cat-parent {% if current_parent and current_parent|int == cat.id %}active{% endif %}" data-cid="{{ cat.id }}"
               onclick="toggleParent({{ cat.id }})">
             {{ cat.name }}
             <small class="text-muted text-nowrap">({{ cat.subs|sum(attribute='total') }})</small>
@@ -239,7 +239,8 @@
                 {% if show_month_as_done %}本月完成售后：{% endif %}
                 {% if show_month_fault_new %}本月新增故障：{% endif %}
                 {% if show_month_fault_done %}本月修复故障：{% endif %}
-                {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
+                {% if current_parent %}大类筛选：{% endif %}
+                {% if not search and not current_cat and not current_parent and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
                 <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% elif show_month_fault_new or show_month_fault_done %}{{ fault_records_list|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
             </span>
             <div>
@@ -407,24 +408,15 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ======= 品类展开/收起 =======
-let activeParent = {{ current_cat and 'null' or 'null' }};
+let activeParent = {{ current_parent|int if current_parent else 'null' }};
 
 function toggleParent(cid) {
-    const el = document.getElementById('parent-' + cid);
-    const pills = document.querySelectorAll('.cat-pill.cat-parent');
-    // 关掉其他
-    document.querySelectorAll('.sub-cards-container').forEach(d => d.style.display = 'none');
-    pills.forEach(p => p.classList.remove('active'));
     if (activeParent === cid) {
         activeParent = null;
-    } else {
-        el.style.display = 'block';
-        pills.forEach(p => { if (p.dataset.cid == cid) p.classList.add('active'); });
-        activeParent = cid;
-        // 清除表格区域
-        {% if current_cat %}
         window.location = '/';
-        {% endif %}
+    } else {
+        activeParent = cid;
+        window.location = '/?parent=' + cid;
     }
 }
 
@@ -434,11 +426,15 @@ function filterByCat(cid) {
     window.location = '/?cat=' + cid;
 }
 
-// 页面加载时恢复状态
-{% if current_cat %}
+// 页面加载时恢复大类展开状态
+{% if current_parent %}
 (function() {
-    // 找到 current_cat 所属的 parent 并展开
-    fetch('/')  // just for state, not needed due to server-side
+    var el = document.getElementById('parent-{{ current_parent }}');
+    if (el) el.style.display = 'block';
+    document.querySelectorAll('.cat-pill.cat-parent').forEach(function(p) {
+        if (p.dataset.cid == '{{ current_parent }}') p.classList.add('active');
+    });
+    activeParent = {{ current_parent }};
 })();
 {% endif %}
 

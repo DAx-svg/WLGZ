@@ -257,6 +257,7 @@ def index():
     db = get_db()
     search = request.args.get('search', '').strip()
     sub_cat_id = request.args.get('cat', '').strip()
+    parent_id = request.args.get('parent', '').strip()
     show_orphan = request.args.get('orphan', '').strip()
     filter_status = request.args.get('status', '').strip()
     show_month_in = request.args.get('month_in', '').strip()
@@ -281,6 +282,13 @@ def index():
         materials = db.execute(
             "SELECT * FROM materials WHERE category_id = ? ORDER BY inbound_time DESC",
             (sub_cat_id,)
+        ).fetchall()
+    elif parent_id:
+        materials = db.execute(
+            "SELECT m.* FROM materials m "
+            "JOIN categories c ON m.category_id = c.id "
+            "WHERE c.parent_id = ? ORDER BY m.inbound_time DESC",
+            (parent_id,)
         ).fetchall()
     elif show_orphan:
         materials = db.execute(
@@ -453,6 +461,7 @@ def index():
                            materials=materials,
                            search=search,
                            current_cat=sub_cat_id,
+                           current_parent=parent_id,
                            show_orphan=show_orphan,
                            filter_status=filter_status,
                            show_month_in=show_month_in,
