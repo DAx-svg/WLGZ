@@ -264,15 +264,22 @@ def index():
     show_month_out = request.args.get('month_out', '').strip()
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
 
-    # 精确 SN 搜索 → 直接跳转
+    # 精确 SN 搜索 → 直接跳转（仅单关键词时）
     if search:
-        exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
-        if exact:
-            return redirect(url_for('detail', sn=search))
-        materials = db.execute(
-            "SELECT * FROM materials WHERE sn LIKE ? OR remarks LIKE ? ORDER BY inbound_time DESC",
-            (f'%{search}%', f'%{search}%')
-        ).fetchall()
+        keywords = search.split()
+        if len(keywords) == 1:
+            exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
+            if exact:
+                return redirect(url_for('detail', sn=search))
+        # 多关键词 AND 搜索（每个关键词需匹配 SN 或备注）
+        conditions = []
+        params = []
+        for kw in keywords:
+            p = f'%{kw}%'
+            conditions.append('(sn LIKE ? OR remarks LIKE ?)')
+            params.extend([p, p])
+        sql = 'SELECT * FROM materials WHERE ' + ' AND '.join(conditions) + ' ORDER BY inbound_time DESC'
+        materials = db.execute(sql, params).fetchall()
     elif filter_status:
         materials = db.execute(
             "SELECT * FROM materials WHERE status = ? ORDER BY inbound_time DESC",

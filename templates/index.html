@@ -136,7 +136,7 @@
     <form method="GET" class="mb-3">
         <div class="input-group" style="max-width:420px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="text" class="form-control" name="search" placeholder="输入 SN 搜索（完整匹配直接跳转详情）" value="{{ search }}">
+            <input type="text" class="form-control" name="search" placeholder="搜索 SN 或备注（空格分隔多关键词）" value="{{ search }}">
             <button class="btn btn-outline-primary" type="submit">搜索</button>
             {% if search %}<a href="/" class="btn btn-outline-secondary">清除</a>{% endif %}
         </div>
@@ -318,7 +318,7 @@
                     <thead class="table-dark">
                         <tr>
                             <th style="width:40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
-                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th><th>操作</th>
+                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th><th>备注</th><th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -340,6 +340,7 @@
                                 {% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="{{ m.remarks or '' }}">{{ m.remarks or '-' }}</small></td>
                             <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation(); deleteMaterial('{{ m.sn }}')" title="删除物料">🗑</button></td>
                         </tr>
                         {% endfor %}
