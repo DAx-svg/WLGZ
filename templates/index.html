@@ -91,6 +91,14 @@
             </div>
         </div>
         <div class="col-4 col-sm-3 col-md-2">
+            <div class="card text-center border-warning" style="cursor:pointer;" onclick="window.location='/?status=故障中'">
+                <div class="card-body py-2">
+                    <div class="fs-4 fw-bold text-warning">{{ stats.fault }}</div>
+                    <small class="text-muted">故障中</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-4 col-sm-3 col-md-2">
             <div class="card text-center border-info" style="cursor:pointer;" onclick="window.location='/?month_in=1'">
                 <div class="card-body py-2">
                     <div class="fs-4 fw-bold text-info">{{ stats.month_in }}</div>
@@ -187,6 +195,10 @@
                                 <div class="num">{{ sub.after_sales }}</div>
                                 <div class="lbl">售后中</div>
                             </div>
+                            <div class="stat-box" style="background:#fff3cd;">
+                                <div class="num" style="color:#fd7e14;">{{ sub.fault }}</div>
+                                <div class="lbl">故障中</div>
+                            </div>
                         </div>
                     </div>
                     <!-- SN 列表 -->
@@ -225,11 +237,13 @@
                 {% if show_month_out %}本月出库物料：{% endif %}
                 {% if show_month_as_new %}本月新增售后：{% endif %}
                 {% if show_month_as_done %}本月完成售后：{% endif %}
-                {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done %}全部物料：{% endif %}
-                <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
+                {% if show_month_fault_new %}本月新增故障：{% endif %}
+                {% if show_month_fault_done %}本月修复故障：{% endif %}
+                {% if not search and not current_cat and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
+                <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% elif show_month_fault_new or show_month_fault_done %}{{ fault_records_list|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
             </span>
             <div>
-                {% if not show_month_as_new and not show_month_as_done %}
+                {% if not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}
                 <button class="btn btn-danger btn-sm me-2" id="batchDelBtn" onclick="batchDelete()" disabled>🗑 批量删除选中</button>
                 {% endif %}
                 <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
@@ -266,6 +280,35 @@
                 <p class="mt-2">暂无相关售后记录</p>
             </div>
             {% endif %}
+            {% elif show_month_fault_new or show_month_fault_done %}
+            <!-- 故障记录表格 -->
+            {% if fault_records_list %}
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr><th>SN</th><th>品类</th><th>{% if show_month_fault_new %}故障原因{% else %}解决方案{% endif %}</th><th>{% if show_month_fault_new %}创建时间{% else %}修复时间{% endif %}</th><th>恢复状态</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for f in fault_records_list %}
+                        <tr>
+                            <td onclick="window.location.href='/detail/{{ f.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ f.sn }}</span></td>
+                            <td onclick="window.location.href='/detail/{{ f.sn }}'" class="clickable-row">
+                                {% if f.cat_name %}{{ f.parent_name or '' }} → {{ f.cat_name }}{% else %}<span class="text-muted">-</span>{% endif %}
+                            </td>
+                            <td onclick="window.location.href='/detail/{{ f.sn }}'" class="clickable-row">{% if show_month_fault_new %}{{ f.fault_reason or '-' }}{% else %}{{ f.solution or '-' }}{% endif %}</td>
+                            <td onclick="window.location.href='/detail/{{ f.sn }}'" class="clickable-row">{% if show_month_fault_new %}{{ f.created_time }}{% else %}{{ f.resolved_time }}{% endif %}</td>
+                            <td onclick="window.location.href='/detail/{{ f.sn }}'" class="clickable-row">{{ f.previous_status }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-exclamation-triangle" style="font-size:3rem;"></i>
+                <p class="mt-2">暂无相关故障记录</p>
+            </div>
+            {% endif %}
             {% else %}
             <!-- 物料表格 -->
             {% if materials %}
@@ -291,6 +334,8 @@
                                 <span class="badge bg-warning text-dark status-badge">{{ m.status }}</span>
                                 {% elif m.status == '售后中' %}
                                 <span class="badge bg-danger status-badge">{{ m.status }}</span>
+                                {% elif m.status == '故障中' %}
+                                <span class="badge bg-warning text-dark status-badge">{{ m.status }}</span>
                                 {% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>

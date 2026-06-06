@@ -109,9 +109,22 @@ def init_db():
             FOREIGN KEY (sn) REFERENCES materials(sn)
         );
 
+        CREATE TABLE IF NOT EXISTS fault_records (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            sn              TEXT NOT NULL,
+            created_time    TEXT NOT NULL,
+            fault_reason    TEXT DEFAULT '',
+            solution        TEXT DEFAULT '',
+            status          TEXT DEFAULT '故障中',
+            previous_status TEXT DEFAULT '在库',
+            resolved_time   TEXT DEFAULT '',
+            FOREIGN KEY (sn) REFERENCES materials(sn)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_outbound_sn ON outbound_records(sn);
         CREATE INDEX IF NOT EXISTS idx_aftersales_sn ON after_sales_records(sn);
         CREATE INDEX IF NOT EXISTS idx_version_sn ON version_changes(sn);
+        CREATE INDEX IF NOT EXISTS idx_fault_sn ON fault_records(sn);
         CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category_id);
     """)
     # 兼容旧数据库：category_id 列如果不存在则添加
@@ -299,7 +312,8 @@ def index():
                 COUNT(m.sn) AS total,
                 SUM(CASE WHEN m.status='在库' THEN 1 ELSE 0 END) AS in_stock,
                 SUM(CASE WHEN m.status='已出库' THEN 1 ELSE 0 END) AS outbound,
-                SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales
+                SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales,
+                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault
             FROM categories c
             LEFT JOIN materials m ON m.category_id = c.id
             WHERE c.parent_id = ?
@@ -325,6 +339,7 @@ def index():
                 'in_stock': s['in_stock'] or 0,
                 'outbound': s['outbound'] or 0,
                 'after_sales': s['after_sales'] or 0,
+                'fault': s['fault'] or 0,
                 'sns': sns_for_subs.get(s['id'], [])
             } for s in subs]
         })
@@ -349,6 +364,9 @@ def index():
         'after_sales': db.execute(
             "SELECT COUNT(*) AS cnt FROM materials WHERE status='售后中'"
         ).fetchone()['cnt'],
+        'fault': db.execute(
+            "SELECT COUNT(*) AS cnt FROM materials WHERE status='故障中'"
+        ).fetchone()['cnt'],
     }
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
     stats['month_in'] = db.execute(
@@ -365,6 +383,14 @@ def index():
     ).fetchone()['cnt']
     stats['month_as_done'] = db.execute(
         "SELECT COUNT(*) AS cnt FROM after_sales_records WHERE completed_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+    stats['month_fault_new'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM fault_records WHERE created_time LIKE ?",
+        (f'{this_month}%',)
+    ).fetchone()['cnt']
+    stats['month_fault_done'] = db.execute(
+        "SELECT COUNT(*) AS cnt FROM fault_records WHERE resolved_time LIKE ?",
         (f'{this_month}%',)
     ).fetchone()['cnt']
 
@@ -397,6 +423,31 @@ def index():
             ORDER BY a.completed_time DESC
         """, (f'{this_month}%',)).fetchall()
 
+    # 故障记录筛选参数
+    show_month_fault_new = request.args.get('month_fault_new', '').strip()
+    show_month_fault_done = request.args.get('month_fault_done', '').strip()
+    fault_records_list = []
+    if show_month_fault_new:
+        fault_records_list = db.execute("""
+            SELECT f.*, m.category_id, c.name AS cat_name, p.name AS parent_name
+            FROM fault_records f
+            JOIN materials m ON f.sn = m.sn
+            LEFT JOIN categories c ON m.category_id = c.id
+            LEFT JOIN categories p ON c.parent_id = p.id
+            WHERE f.created_time LIKE ?
+            ORDER BY f.created_time DESC
+        """, (f'{this_month}%',)).fetchall()
+    elif show_month_fault_done:
+        fault_records_list = db.execute("""
+            SELECT f.*, m.category_id, c.name AS cat_name, p.name AS parent_name
+            FROM fault_records f
+            JOIN materials m ON f.sn = m.sn
+            LEFT JOIN categories c ON m.category_id = c.id
+            LEFT JOIN categories p ON c.parent_id = p.id
+            WHERE f.resolved_time LIKE ?
+            ORDER BY f.resolved_time DESC
+        """, (f'{this_month}%',)).fetchall()
+
     return render_template('index.html',
                            categories=categories,
                            materials=materials,
@@ -408,7 +459,10 @@ def index():
                            show_month_out=show_month_out,
                            show_month_as_new=show_month_as_new,
                            show_month_as_done=show_month_as_done,
+                           show_month_fault_new=show_month_fault_new,
+                           show_month_fault_done=show_month_fault_done,
                            as_records=as_records,
+                           fault_records_list=fault_records_list,
                            total_all=total_all,
                            orphan=orphan,
                            stats=stats)
@@ -432,6 +486,9 @@ def detail(sn):
     ).fetchall()
     aftersales = db.execute(
         "SELECT * FROM after_sales_records WHERE sn=? ORDER BY created_time DESC", (sn,)
+    ).fetchall()
+    fault = db.execute(
+        "SELECT * FROM fault_records WHERE sn=? ORDER BY created_time DESC", (sn,)
     ).fetchall()
     version_changes = db.execute(
         "SELECT * FROM version_changes WHERE sn=? ORDER BY change_time DESC", (sn,)
@@ -457,13 +514,27 @@ def detail(sn):
         db.commit()
     active_as_id = active[0]['id'] if active else 0
 
+    # 查找活跃的故障记录 ID，清理多余活跃记录
+    active_fault = db.execute(
+        "SELECT id FROM fault_records WHERE sn=? AND status='故障中' ORDER BY created_time DESC",
+        (sn,)
+    ).fetchall()
+    if len(active_fault) > 1:
+        for f in active_fault[1:]:
+            db.execute("UPDATE fault_records SET status='已修复', resolved_time=? WHERE id=?",
+                       (datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S'), f['id']))
+        db.commit()
+    active_fault_id = active_fault[0]['id'] if active_fault else 0
+
     return render_template('detail.html',
                            material=material,
                            outbounds=outbounds,
                            aftersales=aftersales,
+                           fault=fault,
                            version_changes=version_changes,
                            cats=cats,
-                           active_as_id=active_as_id)
+                           active_as_id=active_as_id,
+                           active_fault_id=active_fault_id)
 
 
 @app.route('/outbounds')
@@ -705,6 +776,8 @@ def api_restock(sn):
         return jsonify({'success': False, 'message': '物料不存在'}), 404
     if material['status'] == '售后中':
         return jsonify({'success': False, 'message': '售后中的物料不能直接入库，请先完成售后'}), 400
+    if material['status'] == '故障中':
+        return jsonify({'success': False, 'message': '故障中的物料不能直接入库，请先修复故障'}), 400
     db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': f'{sn} 已重新入库'})
@@ -761,6 +834,51 @@ def api_aftersales_complete(record_id):
     return jsonify({'success': True, 'message': '售后工单已完成'})
 
 
+@app.route('/api/fault/<sn>', methods=['POST'])
+def api_fault(sn):
+    """创建故障记录，物料状态切换为故障中"""
+    db = get_db()
+    material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+    if not material:
+        return jsonify({'success': False, 'message': '物料不存在'}), 404
+    # 检查是否已有故障中的记录
+    active = db.execute(
+        "SELECT id FROM fault_records WHERE sn=? AND status='故障中'", (sn,)
+    ).fetchone()
+    if active:
+        return jsonify({'success': False, 'message': f'该物料已有故障记录 #{active["id"]} 处理中，请先修复后再创建'}), 400
+    data = request.get_json(force=True)
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    db.execute(
+        "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
+        "VALUES (?,?,?,?,?)",
+        (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
+    db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
+    db.commit()
+    return jsonify({'success': True, 'message': f'{sn} 已标记为故障中'})
+
+
+@app.route('/api/fault/resolve/<int:record_id>', methods=['POST'])
+def api_fault_resolve(record_id):
+    """修复故障，恢复之前的状态"""
+    db = get_db()
+    record = db.execute("SELECT * FROM fault_records WHERE id=?", (record_id,)).fetchone()
+    if not record:
+        return jsonify({'success': False, 'message': '故障记录不存在'}), 404
+    if record['status'] == '已修复':
+        return jsonify({'success': False, 'message': '已修复，无需重复操作'}), 400
+    data = request.get_json(force=True)
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    db.execute(
+        "UPDATE fault_records SET status='已修复', solution=?, resolved_time=? WHERE id=?",
+        (data.get('solution', ''), now, record_id))
+    # 恢复之前的状态
+    prev = record['previous_status'] if record['previous_status'] not in ('故障中',) else '在库'
+    db.execute("UPDATE materials SET status=? WHERE sn=?", (prev, record['sn']))
+    db.commit()
+    return jsonify({'success': True, 'message': f'{record["sn"]} 故障已修复，状态恢复为「{prev}」'})
+
+
 @app.route('/api/material/delete/<sn>', methods=['POST'])
 def api_delete_material(sn):
     db = get_db()
@@ -768,6 +886,7 @@ def api_delete_material(sn):
         return jsonify({'success': False, 'message': '物料不存在'}), 404
     db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
     db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
+    db.execute("DELETE FROM fault_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM materials WHERE sn=?", (sn,))
     db.commit()
@@ -789,6 +908,7 @@ def api_batch_delete():
     for sn in existing:
         db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
         db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
+        db.execute("DELETE FROM fault_records WHERE sn=?", (sn,))
         db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM materials WHERE sn IN ({})".format(','.join('?' * len(existing))), existing)
     db.commit()

@@ -30,7 +30,21 @@
                 <button class="btn btn-outline-primary btn-sm me-2" data-bs-toggle="modal" data-bs-target="#editModal">
                     <i class="bi bi-pencil"></i> 编辑
                 </button>
-                {% if material.status == '售后中' %}
+                {% if material.status == '故障中' %}
+                <button class="btn btn-warning btn-sm me-2" disabled title="故障中的物料不能出库">
+                    <i class="bi bi-truck"></i> 出库
+                </button>
+                <button class="btn btn-success btn-sm me-2" id="btnRestock" disabled title="故障中的物料不能直接入库，请先修复故障">
+                    <i class="bi bi-box-arrow-in-down"></i> 在库
+                </button>
+                <button class="btn btn-danger btn-sm me-2" disabled title="故障中的物料不能创建售后，请先修复故障">
+                    <i class="bi bi-tools"></i> 售后
+                </button>
+                <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
+                    onclick="document.getElementById('resolveFaultId').value={{ active_fault_id }}">
+                    <i class="bi bi-check-lg"></i> 修复完成
+                </button>
+                {% elif material.status == '售后中' %}
                 <button class="btn btn-warning btn-sm me-2" disabled title="售后中的物料不能出库">
                     <i class="bi bi-truck"></i> 出库
                 </button>
@@ -48,15 +62,21 @@
                 <button class="btn btn-success btn-sm me-2" id="btnRestock" onclick="doRestock()">
                     <i class="bi bi-box-arrow-in-down"></i> 在库
                 </button>
-                <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
+                <button class="btn btn-danger btn-sm me-2" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
                     <i class="bi bi-tools"></i> 售后
+                </button>
+                <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#faultModal">
+                    <i class="bi bi-exclamation-triangle"></i> 故障
                 </button>
                 {% else %}
                 <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
                     <i class="bi bi-truck"></i> 出库
                 </button>
-                <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
+                <button class="btn btn-danger btn-sm me-2" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
                     <i class="bi bi-tools"></i> 售后
+                </button>
+                <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#faultModal">
+                    <i class="bi bi-exclamation-triangle"></i> 故障
                 </button>
                 {% endif %}
             </div>
@@ -91,6 +111,7 @@
                         {% if material.status == '在库' %}<span class="badge bg-success">{{ material.status }}</span>
                         {% elif material.status == '已出库' %}<span class="badge bg-warning text-dark">{{ material.status }}</span>
                         {% elif material.status == '售后中' %}<span class="badge bg-danger">{{ material.status }}</span>
+                        {% elif material.status == '故障中' %}<span class="badge bg-warning text-dark">{{ material.status }}</span>
                         {% else %}<span class="badge bg-secondary">{{ material.status }}</span>{% endif %}
                     </div>
                 </div>
@@ -121,6 +142,7 @@
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#inboundPanel">入库信息</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#outboundPanel">出库记录 <span class="badge bg-secondary">{{ outbounds|length }}</span></button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aftersalesPanel">售后记录 <span class="badge bg-secondary">{{ aftersales|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#faultPanel">故障记录 <span class="badge bg-secondary">{{ fault|length }}</span></button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#versionPanel">版本变更 <span class="badge bg-secondary">{{ version_changes|length }}</span></button></li>
     </ul>
 
@@ -175,6 +197,33 @@
             </div></div>
             {% endfor %}
             {% else %}<div class="empty-state"><i class="bi bi-tools" style="font-size:3rem;"></i><p>暂无售后记录</p></div>{% endif %}
+        </div>
+        <!-- 故障记录 -->
+        <div class="tab-pane fade" id="faultPanel">
+            {% if fault %}
+            {% for f in fault %}
+            <div class="card record-card shadow-sm mb-3" style="border-left-color:#fd7e14;">
+                <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <h6><span class="badge {% if f.status=='故障中' %}bg-warning text-dark{% else %}bg-success{% endif %} me-2">{{ f.status }}</span>故障 #{{ f.id }}</h6>
+                    <small class="text-muted">{{ f.created_time }}</small>
+                </div>
+                <hr>
+                <div class="row g-2">
+                    <div class="col-12"><span class="info-label">故障原因：</span>{{ f.fault_reason or '无' }}</div>
+                    {% if f.solution %}<div class="col-12"><span class="info-label">解决方案：</span>{{ f.solution }}</div>{% endif %}
+                    {% if f.resolved_time %}<div class="col-md-4"><span class="info-label">修复时间：</span>{{ f.resolved_time }}</div>{% endif %}
+                    {% if f.previous_status %}<div class="col-md-4"><span class="info-label">恢复状态：</span>{{ f.previous_status }}</div>{% endif %}
+                </div>
+                {% if f.status == '故障中' %}
+                <button class="btn btn-warning btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
+                    onclick="document.getElementById('resolveFaultId').value={{ f.id }}">
+                    <i class="bi bi-check-lg"></i> 修复完成
+                </button>
+                {% endif %}
+            </div></div>
+            {% endfor %}
+            {% else %}<div class="empty-state"><i class="bi bi-exclamation-triangle" style="font-size:3rem;"></i><p>暂无故障记录</p></div>{% endif %}
         </div>
         <!-- 版本变更 -->
         <div class="tab-pane fade" id="versionPanel">
@@ -266,6 +315,24 @@
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" id="compBtn" type="submit">确认完成</button></div>
 </form></div></div></div>
 
+<!-- ====== 故障弹窗 ====== -->
+<div class="modal fade" id="faultModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+<div class="modal-header bg-warning text-dark"><h5 class="modal-title">故障申报 - {{ material.sn }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+<form id="faultForm"><div class="modal-body">
+    <div class="mb-2"><label class="form-label">故障原因 <span class="text-danger">*</span></label>
+        <textarea class="form-control" id="faultReason" rows="3" required placeholder="请描述故障现象和原因"></textarea></div>
+</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-warning" id="faultBtn" type="submit">标记故障</button></div>
+</form></div></div></div>
+
+<!-- ====== 修复故障弹窗 ====== -->
+<div class="modal fade" id="resolveFaultModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+<div class="modal-header bg-success text-white"><h5 class="modal-title">修复故障 - {{ material.sn }}</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+<form id="resolveFaultForm"><input type="hidden" id="resolveFaultId"><div class="modal-body">
+    <div class="mb-2"><label class="form-label">解决方案 <span class="text-danger">*</span></label>
+        <textarea class="form-control" id="faultSolution" rows="3" required placeholder="请描述故障解决方案"></textarea></div>
+</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" id="resolveFaultBtn" type="submit">确认修复</button></div>
+</form></div></div></div>
+
 <!-- Toast -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:99999;"><div id="resultToast" class="toast"><div class="toast-body" id="toastBody"></div></div></div>
 
@@ -315,6 +382,14 @@ document.getElementById('asForm').addEventListener('submit',function(e){e.preven
 // 完成售后
 document.getElementById('compForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/complete/'+document.getElementById('completeId').value,{send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value},'completeModal',document.getElementById('compBtn'));});
+// 故障
+document.getElementById('faultForm').addEventListener('submit',function(e){e.preventDefault();
+    if(!document.getElementById('faultReason').value.trim()){st('请填写故障原因',false);return;}
+    post('/api/fault/'+SN,{fault_reason:document.getElementById('faultReason').value},'faultModal',document.getElementById('faultBtn'));});
+// 修复故障
+document.getElementById('resolveFaultForm').addEventListener('submit',function(e){e.preventDefault();
+    if(!document.getElementById('faultSolution').value.trim()){st('请填写解决方案',false);return;}
+    post('/api/fault/resolve/'+document.getElementById('resolveFaultId').value,{solution:document.getElementById('faultSolution').value},'resolveFaultModal',document.getElementById('resolveFaultBtn'));});
 </script>
 </body>
 </html>
