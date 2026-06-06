@@ -161,13 +161,15 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>快递</th><th>单号</th><th>客户</th><th>联系方式</th><th>备注</th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>快递</th><th>单号</th><th>客户</th><th>联系方式</th><th>备注</th><th style="width:50px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
                     <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
                     <td>{{ o.outbound_time }}</td><td>{{ o.courier_company or '-' }}</td>
                     <td><code>{{ o.tracking_number or '-' }}</code></td>
                     <td>{{ o.customer_name or '-' }}</td><td>{{ o.customer_contact or '-' }}</td>
                     <td>{% if o.purpose_detail %}<small class="text-muted">{{ o.purpose_detail }}</small>{% endif %}{% if o.remarks %}<br><small>{{ o.remarks }}</small>{% elif not o.purpose_detail %}-{% endif %}</td>
+                    <td><button class="btn btn-outline-secondary btn-sm" title="编辑出库记录"
+                        onclick="editOutbound({{ o.id }},'{{ o.purpose }}','{{ o.purpose_detail or '' }}','{{ o.courier_company or '' }}','{{ o.tracking_number or '' }}','{{ o.customer_name or '' }}','{{ o.customer_contact or '' }}','{{ o.remarks or '' }}')"><i class="bi bi-pencil"></i></button></td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><i class="bi bi-truck" style="font-size:3rem;"></i><p>暂无出库记录</p></div>{% endif %}
@@ -315,6 +317,55 @@
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" id="compBtn" type="submit">确认完成</button></div>
 </form></div></div></div>
 
+<!-- ====== 编辑出库记录弹窗 ====== -->
+<div class="modal fade" id="editOutboundModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+<div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="bi bi-pencil"></i> 编辑出库记录</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+<form id="editOutboundForm"><div class="modal-body">
+    <input type="hidden" id="editOutboundId">
+    <div class="row g-2 mb-2">
+        <div class="col-6">
+            <label class="form-label">出库用途</label>
+            <select class="form-select" id="editPurpose">
+                <option value="">-- 请选择 --</option>
+                <option value="销售出库">销售出库</option>
+                <option value="售后出库">售后出库</option>
+                <option value="售后返客户">售后返客户</option>
+                <option value="测试出库">测试出库</option>
+                <option value="其他出库">其他出库</option>
+            </select>
+        </div>
+        <div class="col-6">
+            <label class="form-label">用途说明</label>
+            <input type="text" class="form-control" id="editPurposeDetail">
+        </div>
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-6">
+            <label class="form-label">客户名称</label>
+            <input type="text" class="form-control" id="editCustomerName">
+        </div>
+        <div class="col-6">
+            <label class="form-label">联系方式</label>
+            <input type="text" class="form-control" id="editCustomerContact">
+        </div>
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-6">
+            <label class="form-label">快递公司</label>
+            <input type="text" class="form-control" id="editCourierCompany">
+        </div>
+        <div class="col-6">
+            <label class="form-label">快递单号</label>
+            <input type="text" class="form-control" id="editTrackingNumber">
+        </div>
+    </div>
+    <div class="mb-2">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" id="editRemarks" rows="2"></textarea>
+    </div>
+</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" id="editOutboundBtn" type="submit">保存修改</button></div>
+</form></div></div></div>
+
 <!-- ====== 故障弹窗 ====== -->
 <div class="modal fade" id="faultModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
 <div class="modal-header bg-warning text-dark"><h5 class="modal-title">故障申报 - {{ material.sn }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -386,6 +437,37 @@ document.getElementById('asForm').addEventListener('submit',function(e){e.preven
 // 完成售后
 document.getElementById('compForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/complete/'+document.getElementById('completeId').value,{send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value},'completeModal',document.getElementById('compBtn'));});
+// 编辑出库记录
+function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,remarks){
+    document.getElementById('editOutboundId').value=id;
+    document.getElementById('editPurpose').value=purpose;
+    document.getElementById('editPurposeDetail').value=purpose_detail;
+    document.getElementById('editCourierCompany').value=courier_company;
+    document.getElementById('editTrackingNumber').value=tracking_number;
+    document.getElementById('editCustomerName').value=customer_name;
+    document.getElementById('editCustomerContact').value=customer_contact;
+    document.getElementById('editRemarks').value=remarks;
+    new bootstrap.Modal(document.getElementById('editOutboundModal')).show();
+}
+document.getElementById('editOutboundForm').addEventListener('submit',function(e){e.preventDefault();
+    var btn=document.getElementById('editOutboundBtn');btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
+    var id=document.getElementById('editOutboundId').value;
+    var payload={
+        purpose:document.getElementById('editPurpose').value,
+        purpose_detail:document.getElementById('editPurposeDetail').value.trim(),
+        courier_company:document.getElementById('editCourierCompany').value.trim(),
+        tracking_number:document.getElementById('editTrackingNumber').value.trim(),
+        customer_name:document.getElementById('editCustomerName').value.trim(),
+        customer_contact:document.getElementById('editCustomerContact').value.trim(),
+        remarks:document.getElementById('editRemarks').value.trim()
+    };
+    fetch('/api/outbound/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+        .then(function(r){return r.json();}).then(function(d){
+            st(d.message,d.success);
+            if(d.success){bootstrap.Modal.getInstance(document.getElementById('editOutboundModal')).hide();reload();}
+            btn.disabled=false;btn.innerHTML='保存修改';
+        }).catch(function(){st('网络错误',false);btn.disabled=false;btn.innerHTML='保存修改';});
+});
 // 故障
 document.getElementById('faultForm').addEventListener('submit',function(e){e.preventDefault();
     if(!document.getElementById('faultReason').value.trim()){st('请填写故障原因',false);return;}

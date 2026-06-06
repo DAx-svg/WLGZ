@@ -797,6 +797,25 @@ def api_outbound(sn):
     return jsonify({'success': True, 'message': '出库操作完成'})
 
 
+@app.route('/api/outbound/<int:record_id>', methods=['PUT'])
+def api_outbound_edit(record_id):
+    """编辑出库记录"""
+    db = get_db()
+    record = db.execute("SELECT * FROM outbound_records WHERE id=?", (record_id,)).fetchone()
+    if not record:
+        return jsonify({'success': False, 'message': '出库记录不存在'}), 404
+    data = request.get_json(force=True)
+    db.execute(
+        "UPDATE outbound_records SET purpose=?, purpose_detail=?, courier_company=?, "
+        "tracking_number=?, customer_name=?, customer_contact=?, remarks=? WHERE id=?",
+        (data.get('purpose', ''), data.get('purpose_detail', ''),
+         data.get('courier_company', ''), data.get('tracking_number', ''),
+         data.get('customer_name', ''), data.get('customer_contact', ''),
+         data.get('remarks', ''), record_id))
+    db.commit()
+    return jsonify({'success': True, 'message': '出库记录已更新'})
+
+
 @app.route('/api/restock/<sn>', methods=['POST'])
 def api_restock(sn):
     """物料重新入库（状态改回在库）"""
