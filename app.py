@@ -318,6 +318,20 @@ def index():
             "SELECT * FROM materials ORDER BY inbound_time DESC"
         ).fetchall()
 
+    # 批量查询每个物料的最新出库用途
+    if materials:
+        sns = [m['sn'] for m in materials]
+        placeholders = ','.join(['?'] * len(sns))
+        rows = db.execute(
+            f"SELECT sn, purpose FROM outbound_records WHERE sn IN ({placeholders}) "
+            "GROUP BY sn HAVING MAX(outbound_time)",
+            sns
+        ).fetchall()
+        purpose_map = {r['sn']: r['purpose'] for r in rows}
+        materials = [dict(m) for m in materials]
+        for m in materials:
+            m['latest_purpose'] = purpose_map.get(m['sn'], '')
+
     # 品类树：大类和旗下小类（带统计）
     parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
     categories = []

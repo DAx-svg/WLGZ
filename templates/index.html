@@ -321,7 +321,7 @@
                     <thead class="table-dark">
                         <tr>
                             <th style="width:40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
-                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>入库时间</th><th>备注</th><th>操作</th>
+                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -340,6 +340,21 @@
                                 <span class="badge bg-danger status-badge">{{ m.status }}</span>
                                 {% elif m.status == '故障中' %}
                                 <span class="badge bg-warning text-dark status-badge">{{ m.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">
+                                {% if m.latest_purpose == '销售出库' %}
+                                <span class="badge bg-primary text-white">{{ m.latest_purpose }}</span>
+                                {% elif m.latest_purpose == '售后出库' %}
+                                <span class="badge bg-danger">{{ m.latest_purpose }}</span>
+                                {% elif m.latest_purpose == '售后返客户' %}
+                                <span class="badge bg-warning text-dark">{{ m.latest_purpose }}</span>
+                                {% elif m.latest_purpose == '测试出库' %}
+                                <span class="badge bg-secondary">{{ m.latest_purpose }}</span>
+                                {% elif m.latest_purpose %}
+                                <span class="badge bg-info text-dark">{{ m.latest_purpose }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>
