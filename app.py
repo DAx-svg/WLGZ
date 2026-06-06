@@ -939,6 +939,84 @@ def api_check_sn(sn):
 
 
 # ==========================================================================
+#                         批量出库
+# ==========================================================================
+
+@app.route('/batch-outbound')
+def batch_outbound_page():
+    """批量出库页面"""
+    db = get_db()
+    parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
+    categories = []
+    for p in parents:
+        subs = db.execute(
+            "SELECT * FROM categories WHERE parent_id=? ORDER BY id", (p['id'],)
+        ).fetchall()
+        categories.append({'id': p['id'], 'name': p['name'], 'subs': [dict(s) for s in subs]})
+    return render_template('batch_outbound.html', categories=categories)
+
+
+@app.route('/api/search_sn')
+def api_search_sn():
+    """搜索 SN（返回 JSON），用于批量出库选择"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    db = get_db()
+    rows = db.execute(
+        "SELECT m.sn, m.status, c.name AS cat_name, p.name AS parent_name "
+        "FROM materials m "
+        "LEFT JOIN categories c ON m.category_id = c.id "
+        "LEFT JOIN categories p ON c.parent_id = p.id "
+        "WHERE m.sn LIKE ? ORDER BY m.inbound_time DESC LIMIT 20",
+        (f'%{q}%',)
+    ).fetchall()
+    return jsonify([{'sn': r['sn'], 'status': r['status'],
+                     'cat_name': r['cat_name'], 'parent_name': r['parent_name']} for r in rows])
+
+
+@app.route('/api/outbound/batch', methods=['POST'])
+def api_outbound_batch():
+    """批量出库：多个 SN 共用同一客户/快递/备注信息"""
+    db = get_db()
+    data = request.get_json(force=True)
+    sns = data.get('sns', [])
+    if not sns:
+        return jsonify({'success': False, 'message': '请选择至少一个物料'}), 400
+    # 去重
+    sns = list(dict.fromkeys(sns))
+    # 校验所有 SN 存在且为在库状态
+    invalid = []
+    for sn in sns:
+        mat = db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()
+        if not mat:
+            invalid.append(f'{sn} 不存在')
+        elif mat['status'] != '在库':
+            invalid.append(f'{sn} 当前状态为「{mat["status"]}」')
+    if invalid:
+        return jsonify({'success': False, 'message': '以下物料无法出库：\n' + '\n'.join(invalid)}), 400
+
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    purpose = data.get('purpose', '')
+    purpose_detail = data.get('purpose_detail', '')
+    courier = data.get('courier_company', '')
+    tracking = data.get('tracking_number', '')
+    customer = data.get('customer_name', '')
+    contact = data.get('customer_contact', '')
+    remarks = data.get('remarks', '')
+
+    for sn in sns:
+        db.execute(
+            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+            "courier_company, tracking_number, customer_name, customer_contact, remarks) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (sn, now, purpose, purpose_detail, courier, tracking, customer, contact, remarks))
+        db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
+    db.commit()
+    return jsonify({'success': True, 'message': f'已批量出库 {len(sns)} 个物料'})
+
+
+# ==========================================================================
 #                            启动入口
 # ==========================================================================
 

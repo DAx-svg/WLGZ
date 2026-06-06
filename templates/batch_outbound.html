@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批量出库</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background: #f5f7fa; }
+        .sn-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: #e7f1ff; border: 1px solid #0d6efd; border-radius: 20px;
+            padding: 4px 12px; margin: 3px; font-size: 0.9rem; font-family: monospace;
+        }
+        .sn-chip .remove { cursor: pointer; color: #dc3545; font-weight: bold; font-size: 1.1rem; line-height: 1; }
+        .sn-chip .remove:hover { color: #a71d2a; }
+        .sn-chip.not-ok { background: #ffe0e0; border-color: #dc3545; color: #888; text-decoration: line-through; }
+        .search-result { cursor: pointer; transition: background 0.15s; }
+        .search-result:hover { background: #e7f1ff; }
+        .search-result.disabled { opacity: 0.5; pointer-events: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- 顶栏 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i class="bi bi-box-arrow-right"></i> 批量出库</h5>
+        <a href="/" class="btn btn-outline-secondary btn-sm" id="backBtn"><i class="bi bi-arrow-left"></i> 返回首页</a>
+    </div>
+
+    <div class="row g-3">
+        <!-- 左栏：选物料 -->
+        <div class="col-md-7">
+            <!-- 搜索 -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <label class="form-label fw-bold"><i class="bi bi-search"></i> 搜索并添加物料</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="searchInput"
+                            placeholder="输入 SN 关键字搜索（至少2个字符）" autofocus>
+                        <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <div id="searchResults" class="mt-2" style="max-height:300px;overflow-y:auto;"></div>
+                </div>
+            </div>
+
+            <!-- 已选物料 -->
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-check2-square"></i> 已选物料 <span id="countBadge" class="badge bg-primary">0</span></span>
+                    <button class="btn btn-outline-danger btn-sm" onclick="clearAll()" id="clearAllBtn" disabled>
+                        <i class="bi bi-trash"></i> 清空
+                    </button>
+                </div>
+                <div class="card-body" id="selectedList" style="min-height:80px;">
+                    <div class="text-muted text-center py-3" id="emptyHint">
+                        <i class="bi bi-inbox" style="font-size:2rem;"></i>
+                        <p class="mt-1 mb-0">搜索并添加要出库的物料</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右栏：出库信息 -->
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-header"><i class="bi bi-info-circle"></i> 出库信息（共用）</div>
+                <div class="card-body">
+                    <form id="batchForm">
+                        <div class="mb-3">
+                            <label class="form-label">出库用途 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="purpose" required>
+                                <option value="">-- 请选择 --</option>
+                                <option value="销售出库">销售出库</option>
+                                <option value="售后出库">售后出库</option>
+                                <option value="测试出库">测试出库</option>
+                                <option value="其他出库">其他出库</option>
+                            </select>
+                        </div>
+                        <div id="purposeDetailBox" class="mb-3" style="display:none;">
+                            <label class="form-label" id="purposeDetailLabel">用途说明</label>
+                            <textarea class="form-control" id="purposeDetail" rows="2"></textarea>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">客户名称</label>
+                                <input type="text" class="form-control" id="customerName" placeholder="例如：XX公司">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">联系方式</label>
+                                <input type="text" class="form-control" id="customerContact" placeholder="电话/微信">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">快递公司</label>
+                                <input type="text" class="form-control" id="courierCompany" placeholder="例如：顺丰">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">快递单号</label>
+                                <input type="text" class="form-control" id="trackingNumber" placeholder="例如：SF123456">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" id="remarks" rows="2" placeholder="整机/套件出库说明"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>
+                            <i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:99999;">
+    <div id="resultToast" class="toast"><div class="toast-body" id="toastBody"></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ====== 状态管理 ======
+let selected = {};  // {sn: status}
+
+// ====== Toast ======
+function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
+
+// ====== 搜索 ======
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', function(){
+    clearTimeout(searchTimer);
+    var q = this.value.trim();
+    if (q.length < 2) { document.getElementById('searchResults').innerHTML = ''; return; }
+    searchTimer = setTimeout(function(){ doSearch(q); }, 300);
+});
+
+async function doSearch(q) {
+    var container = document.getElementById('searchResults');
+    container.innerHTML = '<div class="text-center text-muted py-2"><span class="spinner-border spinner-border-sm"></span> 搜索中...</div>';
+    try {
+        var r = await fetch('/api/search_sn?q=' + encodeURIComponent(q));
+        var data = await r.json();
+        if (!data.length) {
+            container.innerHTML = '<div class="text-muted text-center py-2">无匹配结果</div>';
+            return;
+        }
+        container.innerHTML = data.map(function(item){
+            var added = !!selected[item.sn];
+            var cls = added ? 'search-result disabled' : 'search-result';
+            var badge = item.status === '在库'
+                ? '<span class="badge bg-success">在库</span>'
+                : '<span class="badge bg-secondary">'+item.status+'</span>';
+            var cat = item.parent_name ? (item.parent_name + ' → ' + (item.cat_name||'-')) : (item.cat_name||'未分类');
+            var action = added ? '<span class="badge bg-primary">已添加</span>'
+                : (item.status === '在库'
+                    ? '<button class="btn btn-sm btn-outline-primary">+ 添加</button>'
+                    : '<span class="text-muted small">不可出库</span>');
+            return '<div class="d-flex justify-content-between align-items-center border-bottom py-2 px-2 '+cls+'"'
+                + (added||item.status!=='在库'?'':' onclick="addSn(\''+item.sn+'\',\''+item.status+'\')"')
+                + '>'
+                + '<div><span class="fw-bold text-primary" style="font-family:monospace;">'+item.sn+'</span> '
+                + '<small class="text-muted">'+cat+'</small> '+badge+'</div>'
+                + action + '</div>';
+        }).join('');
+    } catch(e) { container.innerHTML = '<div class="text-danger text-center py-2">搜索失败</div>'; }
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchResults').innerHTML = '';
+}
+
+// ====== 选中管理 ======
+function addSn(sn, status) {
+    if (selected[sn]) return;
+    selected[sn] = status;
+    refreshList();
+    // 清除搜索结果中该项
+    document.getElementById('searchResults').innerHTML = '';
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchInput').focus();
+}
+
+function removeSn(sn) {
+    delete selected[sn];
+    refreshList();
+}
+
+function clearAll() {
+    selected = {};
+    refreshList();
+}
+
+function refreshList() {
+    var container = document.getElementById('selectedList');
+    var sns = Object.keys(selected);
+    var count = sns.length;
+    document.getElementById('countBadge').textContent = count;
+    document.getElementById('clearAllBtn').disabled = count === 0;
+    document.getElementById('submitBtn').disabled = count === 0;
+    document.getElementById('submitText').textContent = count > 0
+        ? '提交批量出库（'+count+' 件）' : '请先选择物料';
+
+    if (count === 0) {
+        container.innerHTML = '<div class="text-muted text-center py-3" id="emptyHint">'
+            + '<i class="bi bi-inbox" style="font-size:2rem;"></i>'
+            + '<p class="mt-1 mb-0">搜索并添加要出库的物料</p></div>';
+        return;
+    }
+
+    container.innerHTML = sns.map(function(sn){
+        var st = selected[sn];
+        var ok = st === '在库';
+        var cls = ok ? 'sn-chip' : 'sn-chip not-ok';
+        var tip = ok ? '在库，可出库' : '状态: '+st+' (出库时将跳过)';
+        return '<span class="'+cls+'" title="'+tip+'">'+sn
+            + (ok ? '' : ' <small>('+st+')</small>')
+            + '<span class="remove" onclick="removeSn(\''+sn+'\')">&times;</span></span>';
+    }).join('');
+}
+
+// ====== 用途联动 ======
+document.getElementById('purpose').addEventListener('change', function(){
+    var box = document.getElementById('purposeDetailBox');
+    var label = document.getElementById('purposeDetailLabel');
+    var v = this.value;
+    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; }
+    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; }
+    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; }
+    else { box.style.display='none'; }
+});
+
+// ====== 提交 ======
+document.getElementById('batchForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    // 筛选在库的
+    var okSns = Object.keys(selected).filter(function(sn){ return selected[sn] === '在库'; });
+    if (okSns.length === 0) {
+        st('所选物料均不在库，无法出库', false);
+        return;
+    }
+    var total = Object.keys(selected).length;
+    var skip = total - okSns.length;
+    var confirmMsg = '确认批量出库 ' + okSns.length + ' 件物料？';
+    if (skip > 0) confirmMsg += '\n（跳过 '+skip+' 件非在库物料）';
+    if (!confirm(confirmMsg)) return;
+
+    var btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 提交中...';
+
+    var payload = {
+        sns: okSns,
+        purpose: document.getElementById('purpose').value,
+        purpose_detail: document.getElementById('purposeDetail').value.trim(),
+        customer_name: document.getElementById('customerName').value.trim(),
+        customer_contact: document.getElementById('customerContact').value.trim(),
+        courier_company: document.getElementById('courierCompany').value.trim(),
+        tracking_number: document.getElementById('trackingNumber').value.trim(),
+        remarks: document.getElementById('remarks').value.trim()
+    };
+
+    fetch('/api/outbound/batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    }).then(function(r){ return r.json(); }).then(function(d){
+        st(d.message, d.success);
+        if (d.success) {
+            selected = {};
+            refreshList();
+            document.getElementById('batchForm').reset();
+            document.getElementById('purposeDetailBox').style.display = 'none';
+        }
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';
+    }).catch(function(){
+        st('网络错误', false);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';
+    });
+});
+
+// ====== 智能返回 ======
+document.getElementById('backBtn').addEventListener('click', function(e){
+    try{var r=new URL(document.referrer);if(r.host===location.host&&r.pathname!==location.pathname){e.preventDefault();history.back();}}catch(e){}
+});
+</script>
+</body>
+</html>
