@@ -270,8 +270,8 @@ def index():
         if exact:
             return redirect(url_for('detail', sn=search))
         materials = db.execute(
-            "SELECT * FROM materials WHERE sn LIKE ? ORDER BY inbound_time DESC",
-            (f'%{search}%',)
+            "SELECT * FROM materials WHERE sn LIKE ? OR remarks LIKE ? ORDER BY inbound_time DESC",
+            (f'%{search}%', f'%{search}%')
         ).fetchall()
     elif filter_status:
         materials = db.execute(
