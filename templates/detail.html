@@ -161,7 +161,7 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>客户</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:50px;"></th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:50px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
                     <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
                     <td class="text-nowrap">{{ o.outbound_time }}</td>
@@ -283,10 +283,10 @@
     </div>
     <!-- 客户信息（销售/售后显示） -->
     <div id="outCustomerGroup" style="display:none;">
-        <div class="mb-2"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer" placeholder="收货人姓名"></div>
+        <div class="mb-2"><label class="form-label">联系人 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer" placeholder="收货人姓名"></div>
         <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact" placeholder="手机/电话"></div>
-        <div class="mb-2"><label class="form-label">公司名称</label><input class="form-control" id="outCompany" placeholder="客户公司抬头"></div>
-        <div class="mb-2"><label class="form-label">地址</label><input class="form-control" id="outAddress" placeholder="收货地址"></div>
+        <div class="mb-2"><label class="form-label">公司名称</label><textarea class="form-control" id="outCompany" rows="2" placeholder="客户公司抬头"></textarea></div>
+        <div class="mb-2"><label class="form-label">地址</label><textarea class="form-control" id="outAddress" rows="2" placeholder="收货地址"></textarea></div>
         <a href="#" class="text-decoration-none small" onclick="document.getElementById('outSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
         <div id="outSmartBox" style="display:none;" class="mt-1">
             <textarea class="form-control form-control-sm" id="outSmartInput" rows="3" placeholder="粘贴含客户信息的文本，自动识别姓名、电话、公司、地址..."></textarea>
@@ -352,7 +352,7 @@
     </div>
     <div class="row g-2 mb-2">
         <div class="col-6">
-            <label class="form-label">客户名称</label>
+            <label class="form-label">联系人</label>
             <input type="text" class="form-control" id="editCustomerName">
         </div>
         <div class="col-6">
@@ -363,11 +363,11 @@
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">公司名称</label>
-            <input type="text" class="form-control" id="editCustomerCompany">
+            <textarea class="form-control" id="editCustomerCompany" rows="2"></textarea>
         </div>
         <div class="col-6">
             <label class="form-label">地址</label>
-            <input type="text" class="form-control" id="editAddress">
+            <textarea class="form-control" id="editAddress" rows="2"></textarea>
         </div>
     </div>
     <a href="#" class="text-decoration-none small" onclick="document.getElementById('editSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
