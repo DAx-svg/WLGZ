@@ -197,14 +197,18 @@ function smartParse(text){
     if(!r.contact){m=text.match(/0\d{2,3}[-\s]?\d{7,8}/);if(m)r.contact=m[0];}
     if(!r.contact){m=text.match(/(?:电话|手机|联系方式|Tel)[：:]\s*(\d[\d\-\s]{6,15})/);if(m)r.contact=m[1].replace(/\s/g,'');}
     if(!r.name){m=text.match(/(?:联系人|姓名|名字|收货人|客户|收件人)[：:]\s*([一-龥]{2,4})/);if(m)r.name=m[1];}
-    m=text.match(/([一-龥]{2,20}(?:公司|有限公司|有限责任公司|集团|科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料))/);if(m)r.company=m[0];
+    // 公司名 — 强信号优先
+    m=text.match(/([一-龥]{3,30}(?:有限公司|有限责任公司))/);
+    if(!m){m=text.match(/([一-龥]{2,20}(?:集团|科技公司|电子公司|实业公司|通讯公司|智能公司|信息公司|网络公司|激光公司|光电公司|机械公司|自动化公司|设备公司|器材公司|数控公司|机器人公司|精工公司|能源公司|材料公司))/);}
+    if(!m){m=text.match(/([一-龥]{2,20}(?:科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料))/);}
+    if(m)r.company=m[0];
     if(!r.company){m=text.match(/(?:公司|单位|抬头)[：:]\s*([一-龥]{2,30})/);if(m)r.company=m[1];}
     m=text.match(/(?:地址|收货地址|住址|收货地)[：:]\s*(.+)/);if(m)r.address=m[1].replace(/[\n\r].*/,'').trim();
     if(!r.address){m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:省|市|区|县|镇|乡|路|街|道|巷|大道|工业区|工业园)[一-龥\d\(\)（）\-\#号栋幢层楼室]{3,60})/);if(m)r.address=m[1];}
     for(var i=0;i<lines.length;i++){
         var ln=lines[i].trim();if(!ln)continue;
         if(r.address&&ln===r.address.substring(0,Math.min(ln.length,r.address.length)))continue;
-        if(!r.company&&/[一-龥].*(?:有限公司|有限责任公司|公司|集团|科技|实业)[一-龥]*$/.test(ln))r.company=ln;
+        if(!r.company&&/[一-龥].*(?:有限公司|有限责任公司|公司|集团|科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料)[一-龥]*$/.test(ln))r.company=ln;
         if(!r.name&&!/[省市县区镇乡路街道巷号公司集团科技有限实业厂部科]/.test(ln)){var nm=ln.match(/^([一-龥]{2,4})$/);if(nm)r.name=nm[1];}
     }
     return r;
