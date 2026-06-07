@@ -136,8 +136,7 @@
                                 <textarea class="form-control" id="customerAddress" rows="2" placeholder="收货地址"></textarea>
                             </div>
                         </div>
-                        <a href="#" class="text-decoration-none small" onclick="document.getElementById('batchSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
-                        <div id="batchSmartBox" style="display:none;" class="mt-1 mb-2">
+                        <div id="batchSmartBox" class="mt-1 mb-2">
                             <textarea class="form-control form-control-sm" id="batchSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
                             <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillBatch()">🔍 识别填充</button>
                         </div>

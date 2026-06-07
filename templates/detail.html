@@ -288,8 +288,7 @@
         <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact" placeholder="手机/电话"></div>
         <div class="mb-2"><label class="form-label">公司名称</label><textarea class="form-control" id="outCompany" rows="2" placeholder="客户公司抬头"></textarea></div>
         <div class="mb-2"><label class="form-label">地址</label><textarea class="form-control" id="outAddress" rows="2" placeholder="收货地址"></textarea></div>
-        <a href="#" class="text-decoration-none small" onclick="document.getElementById('outSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
-        <div id="outSmartBox" style="display:none;" class="mt-1">
+        <div id="outSmartBox" class="mt-1">
             <textarea class="form-control form-control-sm" id="outSmartInput" rows="3" placeholder="粘贴含客户信息的文本，自动识别姓名、电话、公司、地址..."></textarea>
             <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillOutbound()">🔍 识别填充</button>
         </div>
@@ -371,8 +370,7 @@
             <textarea class="form-control" id="editAddress" rows="2"></textarea>
         </div>
     </div>
-    <a href="#" class="text-decoration-none small" onclick="document.getElementById('editSmartBox').style.display='';this.style.display='none';return false;"><i class="bi bi-clipboard"></i> 智能粘贴识别</a>
-    <div id="editSmartBox" style="display:none;" class="mt-1 mb-2">
+    <div id="editSmartBox" class="mt-1 mb-2">
         <textarea class="form-control form-control-sm" id="editSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
         <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillEdit()">🔍 识别填充</button>
     </div>
