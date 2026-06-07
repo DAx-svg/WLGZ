@@ -163,7 +163,7 @@
             <div class="table-responsive"><table class="table table-hover table-striped">
                 <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:80px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
-                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
+                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% if o.purpose_detail %}<br><small class="text-muted">{{ o.purpose_detail }}</small>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-nowrap">{{ o.outbound_time }}</td>
                     <td>{{ o.customer_name or '-' }}</td>
                     <td>{{ o.customer_company or '-' }}</td>
