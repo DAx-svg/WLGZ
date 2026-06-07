@@ -39,6 +39,7 @@
                                     <button class="btn btn-outline-secondary" type="button" onclick="checkSn()">校验</button>
                                 </div>
                                 <div class="form-text" id="snFeedback"></div>
+                                <div id="snSimilarHint" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">品类（小类）</label>
@@ -156,6 +157,87 @@ async function checkSn(){
     }catch(e){}
 }
 document.getElementById('singleSn').addEventListener('blur',checkSn);
+
+// ====== SN 相似度自动填充 ======
+var filledFromSn = null; // 记录自动填充来源 SN
+
+async function autoFillFromSimilar(sn, isBatch){
+    var hintEl = document.getElementById('snSimilarHint');
+    hintEl.style.display = 'none';
+    if(sn.length < 4) return;
+
+    // 单个添加模式：SN 已存在时跳过（批量模式用第一个 SN 做参考，不检查）
+    if(!isBatch){
+        try {
+            var chk = await fetch('/api/check_sn/' + encodeURIComponent(sn));
+            var chkData = await chk.json();
+            if(chkData.exists) return;
+        } catch(e) { return; }
+    }
+
+    try {
+        var r = await fetch('/api/similar_sn/' + encodeURIComponent(sn));
+        var d = await r.json();
+        if(!d.found) return;
+
+        var prefix = isBatch ? 'batch' : 'single';
+        var filled = [];
+
+        // 只填充空字段，避免覆盖用户已填数据
+        var fields = [
+            ['Cat', 'category_id'],
+            ['Hw', 'hw_version'],
+            ['Sw', 'sw_version'],
+            ['HwDesc', 'hw_description'],
+            ['SwDesc', 'sw_description'],
+            ['Remarks', 'remarks']
+        ];
+
+        fields.forEach(function(f){
+            var el = document.getElementById(prefix + f[0]);
+            if(el && !el.value.trim() && d[f[1]]){
+                el.value = d[f[1]];
+                filled.push(f[0]);
+            }
+        });
+
+        if(filled.length > 0){
+            filledFromSn = d.similar_sn;
+            var pct = Math.round(d.similarity * 100);
+            hintEl.style.display = '';
+            hintEl.innerHTML = '<span class="badge bg-info"><i class="bi bi-magic"></i> 已从相似SN <strong>'
+                + d.similar_sn + '</strong> 自动填充 ' + filled.length + ' 项 (相似度 ' + pct + '%)</span>'
+                + ' <a href="#" onclick="undoAutoFill(\'' + prefix + '\');return false;" class="ms-1 text-decoration-none small text-secondary">撤销</a>';
+            saveFormData(); // 同步到 sessionStorage
+        }
+    } catch(e) {}
+}
+
+function undoAutoFill(prefix){
+    var fieldIds = ['Cat','Hw','Sw','HwDesc','SwDesc','Remarks'];
+    fieldIds.forEach(function(f){
+        var el = document.getElementById(prefix + f);
+        if(el) el.value = '';
+    });
+    document.getElementById('snSimilarHint').style.display = 'none';
+    filledFromSn = null;
+    saveFormData();
+    st('已撤销自动填充', true);
+}
+
+// SN 输入框失焦时触发相似度检索
+document.getElementById('singleSn').addEventListener('blur', function(){
+    var sn = this.value.trim();
+    if(sn) autoFillFromSimilar(sn, false);
+});
+
+// 批量 SN 输入框失焦时，取第一个 SN 做相似度检索
+document.getElementById('batchSns').addEventListener('blur', function(){
+    var text = this.value.trim();
+    if(!text) return;
+    var sns = text.split(/[\,;\s]+/).filter(function(s){return s.trim();});
+    if(sns.length > 0) autoFillFromSimilar(sns[0].trim(), true);
+});
 
 async function doSubmit(formId, btnId, isBatch){
     var btn=document.getElementById(btnId);

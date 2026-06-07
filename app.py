@@ -1100,6 +1100,70 @@ def api_check_sn(sn):
     return jsonify({'exists': cur is not None})
 
 
+def levenshtein_ratio(s1, s2):
+    """计算两个字符串的相似度 (0.0 ~ 1.0)，基于编辑距离"""
+    if not s1 or not s2:
+        return 0.0
+    len1, len2 = len(s1), len(s2)
+    # 长度差超过 30% 直接判为不相似（性能优化）
+    if abs(len1 - len2) > max(len1, len2) * 0.3:
+        return 0.0
+    prev = list(range(len2 + 1))
+    curr = [0] * (len2 + 1)
+    for i in range(1, len1 + 1):
+        curr[0] = i
+        for j in range(1, len2 + 1):
+            curr[j] = prev[j - 1] if s1[i - 1] == s2[j - 1] else 1 + min(prev[j], curr[j - 1], prev[j - 1])
+        prev, curr = curr, prev
+    return 1.0 - prev[len2] / max(len1, len2)
+
+
+@app.route('/api/similar_sn/<sn>')
+def api_similar_sn(sn):
+    """查找与给定 SN 最相似的已有物料，用于新增时自动填充信息"""
+    db = get_db()
+    if len(sn) < 4:
+        return jsonify({'found': False, 'reason': 'SN too short'})
+    all_sns = db.execute("SELECT sn FROM materials").fetchall()
+    if not all_sns:
+        return jsonify({'found': False, 'reason': 'no data'})
+
+    THRESHOLD = 0.85  # 相似度阈值
+    best_sn = None
+    best_ratio = 0.0
+
+    for row in all_sns:
+        existing = row['sn']
+        if existing == sn:
+            continue
+        ratio = levenshtein_ratio(sn, existing)
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_sn = existing
+
+    if best_sn and best_ratio >= THRESHOLD:
+        material = db.execute(
+            "SELECT m.*, c.id AS cat_id FROM materials m "
+            "LEFT JOIN categories c ON m.category_id = c.id "
+            "WHERE m.sn = ?", (best_sn,)
+        ).fetchone()
+        if not material:
+            return jsonify({'found': False})
+        return jsonify({
+            'found': True,
+            'similar_sn': best_sn,
+            'similarity': round(best_ratio, 4),
+            'category_id': material['cat_id'],
+            'hw_version': material['hw_version'],
+            'sw_version': material['sw_version'],
+            'hw_description': material['hw_description'],
+            'sw_description': material['sw_description'],
+            'remarks': material['remarks']
+        })
+
+    return jsonify({'found': False})
+
+
 # ==========================================================================
 #                         批量出库
 # ==========================================================================
