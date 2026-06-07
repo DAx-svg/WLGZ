@@ -192,45 +192,151 @@ function st(m,ok){var e=document.getElementById('resultToast');document.getEleme
 // ====== 智能解析客户信息 ======
 function smartParse(text){
     var r={name:'',contact:'',company:'',address:''};
-    var lines=text.split(/[\n\r]+/);
-    var m=text.match(/([一-龥]{2,4})?1[3-9]\d{9}/);if(m){r.contact=m[0].slice(-11);if(m[1])r.name=m[1];}
-    if(!r.contact){m=text.match(/0\d{2,3}[-\s]?\d{7,8}/);if(m)r.contact=m[0];}
-    if(!r.contact){m=text.match(/(?:电话|手机|联系方式|Tel)[：:]\s*(\d[\d\-\s]{6,15})/);if(m)r.contact=m[1].replace(/\s/g,'');}
-    if(!r.name){m=text.match(/(?:联系人|姓名|名字|收货人|客户|收件人)[：:]\s*([一-龥]{2,4})/);if(m)r.name=m[1];}
-    // 公司名 — 强信号优先
-    m=text.match(/([一-龥]{3,30}(?:有限公司|有限责任公司|股份有限公司|合伙企业))/);
-    if(!m){m=text.match(/([一-龥]{2,20}(?:集团公司|科技公司|电子公司|实业公司|通讯公司|智能公司|信息公司|网络公司|激光公司|光电公司|机械公司|自动化公司|设备公司|器材公司|数控公司|机器人公司|精工公司|能源公司|材料公司|工作室|商行|经营部|办事处|中心))/);}
-    if(!m){m=text.match(/([一-龥]{3,20}(?:科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料|厂|场|部))/);}
-    if(m)r.company=m[0].replace(/^[号栋幢层楼室门座]+/, '');  // 去掉地址残余字
-    if(!r.company){m=text.match(/(?:公司|单位|抬头|工厂|工作室)[：:]\s*([一-龥]{2,30})/);if(m)r.company=m[1];}
-    m=text.match(/(?:地址|收货地址|住址|收货地)[：:]\s*(.+)/);if(m)r.address=m[1].replace(/[\n\r].*/,'').trim();
-    // 地址（无标签：省市区路号 — 宽松捕获，尾部裁掉公司/电话/姓名）
-    if(!r.address){m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:开发区|高新区|保税区|产业园区|产业园|工业区|工业园|园区|基地|新城|新区|省|市|区|县|镇|乡|路|街|道|巷|大道).+)/);
-        if(m){
-            r.address = m[1].replace(/[\n\r].*/, '');
-            var trimList = [r.contact, r.name, r.company].filter(Boolean);
-            for (var t = 0; t < trimList.length; t++) {
-                var s = trimList[t];
-                var idx = r.address.lastIndexOf(s);
-                if (idx >= 0 && (r.address.length - idx - s.length) <= 3) {
-                    r.address = r.address.substring(0, idx);
-                }
+    // 规范化：· 在某些格式中用作地区分隔符（如 四川·成都）
+    var t=text.replace(/·/g,'');
+    // 用于地址正则的文本（去空白，避免空格切断地址连续性）
+    var at=t.replace(/\s+/g,'');
+    var m;
+
+    // ====== 1. 手机号 ======
+    // 1a. 粘连姓名+手机（最高置信度）：唐咏贤13326765299
+    m=t.match(/([一-龥]{2,4})1[3-9]\d{9}/);
+    if(m){r.contact=m[0].slice(-11);r.name=m[1];}
+    // 1b. 独立手机号
+    if(!r.contact){m=t.match(/1[3-9]\d{9}/);if(m)r.contact=m[0];}
+    // 1c. 座机
+    if(!r.contact){m=t.match(/0\d{2,3}[-\s]?\d{7,8}/);if(m)r.contact=m[0];}
+    // 1d. 标签式电话
+    if(!r.contact){m=t.match(/(?:电话|手机|联系方式|Tel)[：:]\s*(\d[\d\-\s]{6,15})/);if(m)r.contact=m[1].replace(/\s/g,'');}
+
+    // ====== 2. 姓名 ======
+    // 2a. 部门前缀+姓名（高置信度）：售后部吕燕梅
+    if(!r.name){m=t.match(/(?:售后部|技术部|销售部|客服部|财务部|行政部|采购部|生产部|质检部|研发部|市场部)([一-龥]{2,4})/);if(m)r.name=m[1];}
+    // 2b. 姓名+收：孙晨光收
+    if(!r.name){m=t.match(/([一-龥]{2,4})收/);if(m)r.name=m[1];}
+    // 2c. 标签式姓名
+    if(!r.name){m=t.match(/(?:联系人|姓名|名字|收货人|客户|收件人)[：:]\s*([一-龥]{2,4})/);if(m)r.name=m[1];}
+    // 2d. 手机号前面紧邻的姓名（允许1-2个分隔符：空格/逗号/tab）
+    if(r.contact&&!r.name){
+        var idx=t.indexOf(r.contact);
+        if(idx>0){m=t.substring(0,idx).match(/([一-龥]{2,4})[\s，,、\t]{0,2}$/);if(m)r.name=m[1];}
+    }
+    // 2e. 手机号后面紧邻的姓名
+    if(r.contact&&!r.name){
+        var idx=t.indexOf(r.contact)+r.contact.length;
+        if(idx<t.length){m=t.substring(idx).match(/^[\s，,、\t]{0,2}([一-龥]{2,4})/);if(m&&!/[省市县区镇乡路街道巷号公司集团科技有限实业厂部科园]/.test(m[1]))r.name=m[1];}
+    }
+
+    // ====== 3. 公司名 ======
+    // 3a. 强后缀：有限公司|有限责任公司|股份有限公司|合伙企业
+    m=t.match(/([一-龥]{3,30}(?:有限公司|有限责任公司|股份有限公司|合伙企业))/);
+    // 3b. 中等后缀：X公司|工作室|商行|经营部|办事处|中心
+    if(!m){m=t.match(/([一-龥]{2,20}(?:集团公司|科技公司|电子公司|实业公司|通讯公司|智能公司|信息公司|网络公司|激光公司|光电公司|机械公司|自动化公司|设备公司|器材公司|数控公司|机器人公司|精工公司|能源公司|材料公司|工作室|商行|经营部|办事处|中心))/);}
+    // 3c. 弱关键词（需要≥2个前导字）：科技|电子|激光|厂|场|部
+    if(!m){m=t.match(/([一-龥]{2,20}(?:科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料|厂|场|部))/);
+        if(m){var nc=t.charAt(m.index+m[0].length);if(/[园路街镇区号栋幢楼室层座巷]/.test(nc))m=null;}
+    }
+    if(m)r.company=m[0].replace(/^[号栋幢层楼室门座]+/,'');
+    if(r.company&&(r.company.length>15||/[路街号栋幢楼室层座园]/.test(r.company))){
+        var better=r.company.match(/.*(?:[园路街镇区号栋幢楼室层座巷口内院]|[\s，,、\t])([一-龥]{3,20}(?:有限公司|有限责任公司|股份有限公司|合伙企业|集团公司|科技公司|工作室|商行|经营部|办事处|中心|公司|科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料|厂|场|部))$/);
+        if(better)r.company=better[1];
+    }
+    // 3d. 标签式公司
+    if(!r.company){m=t.match(/(?:公司|单位|抬头|工厂|工作室)[：:]\s*([一-龥]{2,30})/);if(m)r.company=m[1];}
+
+    // ====== 4. 地址（标签式） ======
+    // 4a. 所在地区
+    m=t.match(/(?:所在地区|地区)[：:]\s*([^\n\r]+)/);
+    if(m){var area=m[1].trim();if(!/(?:有限公司|有限责任公司|股份有限公司|合伙企业|集团公司|公司|工厂|工作室)/.test(area))r.address=area;}
+    // 4b. 详细地址（可能实际是公司名，如"详细地址：XX有限公司"）
+    if(!r.address){m=t.match(/(?:详细地址)[：:]\s*([^\n\r]+)/);if(m){
+        var da=m[1].trim();
+        if(/(?:有限公司|有限责任公司|股份有限公司|合伙企业)/.test(da)){if(!r.company)r.company=da;}
+        else r.address=da;
+    }}
+    // 4c. 地址/收货地址
+    if(!r.address){m=t.match(/(?:地址|收货地址|住址|收货地)[：:]\s*([^\n\r]+)/);if(m)r.address=m[1].trim();}
+
+    // ====== 5. 片段遍历（按换行/逗号/tab拆分，补充识别公司/姓名/地址） ======
+    var segs=[];
+    var lines=t.split(/[\n\r]+/);
+    for(var i=0;i<lines.length;i++){
+        var parts=lines[i].split(/[，,\t]+/);
+        for(var j=0;j<parts.length;j++){var s=parts[j].trim();if(s)segs.push(s);}
+    }
+    for(var i=0;i<segs.length;i++){
+        var seg=segs[i];
+        // 手机号
+        if(!r.contact){var pm=seg.match(/1[3-9]\d{9}/);if(pm)r.contact=pm[0];}
+        // 公司名
+        if(!r.company&&/[一-龥].*(?:有限公司|有限责任公司|股份有限公司|合伙企业|集团公司|科技公司|工作室|商行|经营部|办事处|中心|公司|集团|科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料|厂)[一-龥]*$/.test(seg)){r.company=seg;}
+        // 地址片段（含地址特征字，且未被标签式捕获时）
+        if(!r.address&&seg.length>4&&/[省市县区镇乡路街道巷号栋幢楼室层座园\d]/.test(seg)){
+            var useSeg=seg;
+            // 若片段中含手机号，尝试从省/市级模式截取纯地址部分
+            if(r.contact&&seg.indexOf(r.contact)>=0){
+                var am=seg.match(/([一-齥]{2,15}(?:省|市|区|县).+)/);
+                if(am){useSeg=am[1];}else{useSeg='';}
             }
-            r.address = r.address.replace(/[\s,，。、\-\#]+$/, '').trim();
-            r.address = r.address.replace(/[，,\s]+([一-龥a-zA-Z\d]{2,8})$/, function(match, frag) {
-                if (/[路街镇区市省县乡号栋幢楼室层座园巷门厂]$/.test(frag)) return match;
-                return '';
-            });
+            if(useSeg){
+                // 切掉末尾嵌入的公司名
+                if(r.company){var ci=useSeg.indexOf(r.company);if(ci>0&&/[路街巷号栋幢楼室层座园厂区内院\d]/.test(useSeg.substring(0,ci))){useSeg=useSeg.substring(0,ci).replace(/[，,\s]+$/,'');}}
+                r.address=useSeg;
+            }
+        }
+        // 姓名（纯中文2-4字，不含地址/公司特征字）
+        if(!r.name&&!/[省市县区镇乡路街道巷号公司集团科技有限实业厂部科园\d]/.test(seg)){
+            var nm=seg.match(/^([一-龥]{2,4})[收]?$/);
+            if(nm)r.name=nm[1];
         }
     }
-    for(var i=0;i<lines.length;i++){
-        var ln=lines[i].trim();if(!ln)continue;
-        if(r.address&&ln===r.address.substring(0,Math.min(ln.length,r.address.length)))continue;
-        if(!r.company&&/[一-龥].*(?:有限公司|有限责任公司|股份有限公司|合伙企业|集团公司|科技公司|工作室|商行|经营部|办事处|中心|公司|集团|科技|电子|实业|通讯|智能|信息|网络|激光|光电|机械|自动化|设备|器材|数控|机器人|精工|能源|材料|厂)[一-龥]*$/.test(ln))r.company=ln;
-        if(!r.name&&!/[省市县区镇乡路街道巷号公司集团科技有限实业厂部科]/.test(ln)){var nm=ln.match(/^([一-龥]{2,4})$/);if(nm)r.name=nm[1];}
+
+    // ====== 6. 地址兜底：省市区路号正则（在去空白文本上匹配） ======
+    if(!r.address){
+        m=at.match(/([一-齥]{2,15}(?:省|市|区)[一-龥]{2,60}(?:开发区|高新区|保税区|产业园区|产业园|工业区|工业园|园区|基地|新城|新区|省|市|区|县|镇|乡|街道|路|街|道|巷|大道).+)/);
+        if(m)r.address=cleanAddress(m[1],r);
     }
+    // 6b. 市级地址（无省份前缀，如 成都市双流区...）
+    if(!r.address){
+        m=at.match(/([一-齥]{2,15}(?:市|区|县)[一-龥]{2,60}(?:开发区|高新区|保税区|产业园区|产业园|工业区|工业园|园区|基地|新城|新区|镇|乡|街道|路|街|道|巷|大道).+)/);
+        if(m)r.address=cleanAddress(m[1],r);
+    }
+
+    // ====== 7. 地址后处理：如果公司名嵌在地址中间，切掉 ======
+    if(r.address&&r.company){
+        var ci=r.address.indexOf(r.company);
+        if(ci>0){
+            var before=r.address.substring(0,ci);
+            if(/[路街巷号栋幢楼室层座园厂区内院\d]/.test(before)){
+                r.address=before.replace(/[，,\s]+$/,'').trim();
+            }
+        }
+    }
+
     return r;
 }
+function cleanAddress(raw,r){
+    var addr=raw.replace(/[\n\r].*/,'');
+    // 从尾部依次裁掉已识别的电话、姓名、公司名（只裁末尾，保留嵌入在地址中间的）
+    var trimList=[];
+    if(r.contact)trimList.push(r.contact);
+    if(r.name)trimList.push(r.name);
+    if(r.company)trimList.push(r.company);
+    for(var t=0;t<trimList.length;t++){
+        var s=trimList[t];
+        var idx=addr.lastIndexOf(s);
+        if(idx>=0&&(addr.length-idx-s.length)<=3)addr=addr.substring(0,idx);
+    }
+    addr=addr.replace(/[\s,，。、\-\#]+$/,'').trim();
+    // 尾部清洗：裁掉逗号/空格分隔的残余短中文片段（部门名/不完整公司名等非地址内容）
+    addr=addr.replace(/[，,\s]+([一-龥a-zA-Z\d]{2,8})$/,function(match,frag){
+        if(/[路街镇区市省县乡号栋幢楼室层座园巷门厂]$/.test(frag))return match;
+        if(/^(?:售后|技术|销售|客服|财务|行政|采购|生产|质检|研发|市场)/.test(frag))return'';
+        return'';
+    });
+    return addr;
+}
+
 function smartFillBatch(){
     var p=smartParse(document.getElementById('batchSmartInput').value);
     if(p.name)document.getElementById('customerName').value=p.name;
