@@ -807,8 +807,15 @@ def api_edit_material(sn):
 @app.route('/api/outbound/<sn>', methods=['POST'])
 def api_outbound(sn):
     db = get_db()
-    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+    mat = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+    if not mat:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    if mat['status'] == '已出库':
+        return jsonify({'success': False, 'message': '该物料已出库，不能二次出库'}), 400
+    if mat['status'] == '售后中':
+        return jsonify({'success': False, 'message': '售后中的物料不能出库'}), 400
+    if mat['status'] == '故障中':
+        return jsonify({'success': False, 'message': '故障中的物料不能出库'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(

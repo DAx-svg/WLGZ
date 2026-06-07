@@ -56,7 +56,7 @@
                     <i class="bi bi-check-lg"></i> 完成售后
                 </button>
                 {% elif material.status == '已出库' %}
-                <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
+                <button class="btn btn-warning btn-sm me-2" disabled title="已出库的物料不能二次出库">
                     <i class="bi bi-truck"></i> 出库
                 </button>
                 <button class="btn btn-success btn-sm me-2" id="btnRestock" onclick="doRestock()">
@@ -280,6 +280,7 @@
             <option value="销售出库">销售出库</option>
             <option value="售后出库">售后出库</option>
             <option value="测试出库">测试出库</option>
+            <option value="其他出库">其他出库</option>
         </select>
     </div>
     <!-- 客户信息（销售/售后显示） -->
@@ -300,6 +301,10 @@
     <!-- 测试原因（测试显示） -->
     <div id="outTestReason" style="display:none;">
         <div class="mb-2"><label class="form-label">测试原因 <span class="text-danger">*</span></label><textarea class="form-control" id="outPurposeDetailTest" rows="2" placeholder="请说明测试原因"></textarea></div>
+    </div>
+    <!-- 其他原因（其他出库显示） -->
+    <div id="outOtherReason" style="display:none;">
+        <div class="mb-2"><label class="form-label">出库说明 <span class="text-danger">*</span></label><textarea class="form-control" id="outPurposeDetailOther" rows="2" placeholder="请说明出库原因"></textarea></div>
     </div>
     <hr>
     <div class="mb-2"><label class="form-label">快递公司</label><input class="form-control" id="outCourier"></div>
@@ -616,9 +621,10 @@ document.getElementById('editForm').addEventListener('submit',function(e){e.prev
 // 出库用途切换
 document.getElementById('outPurpose').addEventListener('change',function(){
     var p=this.value;
-    document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库')?'':'none';
+    document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库'||p==='其他出库')?'':'none';
     document.getElementById('outAfterSalesReason').style.display=(p==='售后出库')?'':'none';
     document.getElementById('outTestReason').style.display=(p==='测试出库')?'':'none';
+    document.getElementById('outOtherReason').style.display=(p==='其他出库')?'':'none';
 });
 // 出库
 document.getElementById('outForm').addEventListener('submit',function(e){e.preventDefault();
@@ -627,6 +633,7 @@ document.getElementById('outForm').addEventListener('submit',function(e){e.preve
     var purpose_detail='';
     if(purpose==='售后出库') purpose_detail=document.getElementById('outPurposeDetailAS').value;
     else if(purpose==='测试出库') purpose_detail=document.getElementById('outPurposeDetailTest').value;
+    else if(purpose==='其他出库') purpose_detail=document.getElementById('outPurposeDetailOther').value;
     post('/api/outbound/'+SN,{purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,customer_company:document.getElementById('outCompany').value,address:document.getElementById('outAddress').value,remarks:document.getElementById('outRemarks').value},'outboundModal',document.getElementById('outBtn'));});
 // 在库
 async function doRestock(){
