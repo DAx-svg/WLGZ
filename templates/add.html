@@ -262,9 +262,22 @@ async function autoFillFromSimilar(sn, isBatch){
                 hintEl.querySelector('.remarks-fill-link').addEventListener('click', function(e){
                     e.preventDefault();
                     var remarksEl = document.getElementById(prefix + 'Remarks');
-                    if(remarksEl){ remarksEl.value = similarRemarks; saveFormData(); st('备注已填充', true); }
-                    // 填充后隐藏备注按钮
-                    this.style.display = 'none';
+                    if(!remarksEl) return;
+                    if(remarksEl.value === similarRemarks){
+                        // 已填充 → 撤销备注
+                        remarksEl.value = '';
+                        this.innerHTML = '📋备注';
+                        this.title = '点击填充备注';
+                        saveFormData();
+                        st('备注已撤销', true);
+                    } else {
+                        // 未填充 → 填充备注
+                        remarksEl.value = similarRemarks;
+                        this.innerHTML = '↩撤销备注';
+                        this.title = '点击撤销备注';
+                        saveFormData();
+                        st('备注已填充', true);
+                    }
                 });
             }
             saveFormData();
