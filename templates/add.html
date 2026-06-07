@@ -240,7 +240,7 @@ async function autoFillFromSimilar(sn, isBatch){
 
         fields.forEach(function(f){
             var el = document.getElementById(prefix + f[0]);
-            if(el && !el.value.trim() && d[f[1]]){
+            if(el && d[f[1]]){
                 el.value = d[f[1]];
                 filled.push(f[0]);
             }
