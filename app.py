@@ -332,14 +332,16 @@ def index():
         sns = [m['sn'] for m in materials]
         placeholders = ','.join(['?'] * len(sns))
         rows = db.execute(
-            f"SELECT sn, purpose FROM outbound_records WHERE sn IN ({placeholders}) "
+            f"SELECT sn, purpose, purpose_detail FROM outbound_records WHERE sn IN ({placeholders}) "
             "GROUP BY sn HAVING MAX(outbound_time)",
             sns
         ).fetchall()
         purpose_map = {r['sn']: r['purpose'] for r in rows}
+        detail_map = {r['sn']: r['purpose_detail'] for r in rows}
         materials = [dict(m) for m in materials]
         for m in materials:
             m['latest_purpose'] = purpose_map.get(m['sn'], '')
+            m['latest_purpose_detail'] = detail_map.get(m['sn'], '')
 
     # 批量查询物料所属品类
     if materials:

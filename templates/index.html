@@ -363,6 +363,7 @@
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
+                                {% if m.latest_purpose_detail %}<div class="fw-bold text-dark mt-1">{{ m.latest_purpose_detail }}</div>{% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="{{ m.remarks or '' }}">{{ m.remarks or '-' }}</small></td>
