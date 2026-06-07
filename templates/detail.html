@@ -551,7 +551,11 @@ function smartParse(text){
         else r.address=da;
     }}
     // 4c. 地址/收货地址
-    if(!r.address){m=t.match(/(?:地址|收货地址|住址|收货地)[：:]\s*([^\n\r]+)/);if(m)r.address=m[1].trim();}
+    if(!r.address){m=t.match(/(?:收货地址|地址|住址|收货地)[：:]\s*([^\n\r]+)/);if(m){
+        var da2=m[1].trim();
+        if(/(?:有限公司|有限责任公司|股份有限公司|合伙企业)/.test(da2)){if(!r.company)r.company=da2;}
+        else r.address=da2;
+    }}
 
     // ====== 5. 片段遍历（按换行/逗号/tab拆分，补充识别公司/姓名/地址） ======
     var segs=[];
