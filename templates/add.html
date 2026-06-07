@@ -229,6 +229,7 @@ async function autoFillFromSimilar(sn, isBatch){
 
         var prefix = isBatch ? 'batch' : 'single';
         var filled = [];
+        var similarRemarks = d.remarks || '';
 
         var fields = [
             ['Cat', 'category_id'],
@@ -251,11 +252,21 @@ async function autoFillFromSimilar(sn, isBatch){
             hintEl.style.display = '';
             hintEl.innerHTML = ' <span class="badge bg-info"><i class="bi bi-magic"></i> 已从 <strong>'
                 + d.similar_sn + '</strong> 填充 ' + filled.length + ' 项 (相似度 ' + pct + '%)</span>'
-                + ' <a href="#" class="ms-1 text-decoration-none small text-secondary undo-fill-link">撤销</a>';
+                + ' <a href="#" class="ms-1 text-decoration-none small text-secondary undo-fill-link">撤销</a>'
+                + (similarRemarks ? ' <a href="#" class="ms-1 text-decoration-none small text-info remarks-fill-link" title="点击填充备注">📋备注</a>' : '');
             hintEl.querySelector('.undo-fill-link').addEventListener('click', function(e){
                 e.preventDefault();
                 undoAutoFill(isBatch);
             });
+            if(similarRemarks){
+                hintEl.querySelector('.remarks-fill-link').addEventListener('click', function(e){
+                    e.preventDefault();
+                    var remarksEl = document.getElementById(prefix + 'Remarks');
+                    if(remarksEl){ remarksEl.value = similarRemarks; saveFormData(); st('备注已填充', true); }
+                    // 填充后隐藏备注按钮
+                    this.style.display = 'none';
+                });
+            }
             saveFormData();
         } else {
             st('所有字段已填写，无需自动填充', false);
@@ -266,7 +277,7 @@ async function autoFillFromSimilar(sn, isBatch){
 function undoAutoFill(isBatch){
     var prefix = isBatch ? 'batch' : 'single';
     var hintEl = document.getElementById(isBatch ? 'batchSimilarHint' : 'snSimilarHint');
-    ['Cat','Hw','Sw','HwDesc','SwDesc'].forEach(function(f){
+    ['Cat','Hw','Sw','HwDesc','SwDesc','Remarks'].forEach(function(f){
         var el = document.getElementById(prefix + f);
         if(el) el.value = '';
     });
