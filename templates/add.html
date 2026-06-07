@@ -207,7 +207,11 @@ async function autoFillFromSimilar(sn, isBatch){
             hintEl.style.display = '';
             hintEl.innerHTML = '<span class="badge bg-info"><i class="bi bi-magic"></i> 已从相似SN <strong>'
                 + d.similar_sn + '</strong> 自动填充 ' + filled.length + ' 项 (相似度 ' + pct + '%)</span>'
-                + ' <a href="#" onclick="undoAutoFill(\'' + prefix + '\');return false;" class="ms-1 text-decoration-none small text-secondary">撤销</a>';
+                + ' <a href="#" class="ms-1 text-decoration-none small text-secondary undo-fill-link">撤销</a>';
+            hintEl.querySelector('.undo-fill-link').addEventListener('click', function(e){
+                e.preventDefault();
+                undoAutoFill(prefix);
+            });
             saveFormData(); // 同步到 sessionStorage
         }
     } catch(e) {}
