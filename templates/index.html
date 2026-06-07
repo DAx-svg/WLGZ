@@ -321,7 +321,7 @@
                     <thead class="table-dark">
                         <tr>
                             <th style="width:40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
-                            <th>SN</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>
+                            <th>SN</th><th>品类</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -329,6 +329,13 @@
                         <tr>
                             <td><input type="checkbox" class="mat-cb" value="{{ m.sn }}" onchange="updateBatchDelBtn()"></td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ m.sn }}</span></td>
+                            <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">
+                                {% if m.cat_name %}
+                                <span class="badge bg-secondary">{{ m.cat_name }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.hw_version or '-' }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.sw_version or '-' }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">

@@ -341,6 +341,23 @@ def index():
         for m in materials:
             m['latest_purpose'] = purpose_map.get(m['sn'], '')
 
+    # 批量查询物料所属品类
+    if materials:
+        cat_ids = set(m.get('category_id') for m in materials if m.get('category_id'))
+        cat_map = {}
+        if cat_ids:
+            cat_rows = db.execute(
+                "SELECT c.id, c.name AS cat_name, p.name AS parent_name "
+                "FROM categories c LEFT JOIN categories p ON c.parent_id=p.id "
+                "WHERE c.id IN ({})".format(','.join('?' * len(cat_ids))),
+                list(cat_ids)
+            ).fetchall()
+            cat_map = {r['id']: (r['cat_name'], r['parent_name']) for r in cat_rows}
+        for m in materials:
+            info = cat_map.get(m.get('category_id'))
+            m['cat_name'] = info[0] if info else ''
+            m['parent_name'] = info[1] if info else ''
+
     # 品类树：大类和旗下小类（带统计）
     parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
     categories = []
