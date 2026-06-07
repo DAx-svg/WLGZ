@@ -161,7 +161,7 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:50px;"></th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>备注</th><th style="width:80px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
                     <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% else %}-{% endif %}</td>
                     <td class="text-nowrap">{{ o.outbound_time }}</td>
@@ -172,8 +172,10 @@
                     <td>{{ o.courier_company or '-' }}</td>
                     <td><code>{{ o.tracking_number or '-' }}</code></td>
                     <td><small class="text-muted">{{ o.remarks or '-' }}</small></td>
-                    <td><button class="btn btn-outline-secondary btn-sm" title="编辑出库记录"
-                        onclick="editOutbound({{ o.id }},'{{ o.purpose }}','{{ o.purpose_detail or '' }}','{{ o.courier_company or '' }}','{{ o.tracking_number or '' }}','{{ o.customer_name or '' }}','{{ o.customer_contact or '' }}','{{ o.customer_company or '' }}','{{ o.address or '' }}','{{ o.remarks or '' }}')"><i class="bi bi-pencil"></i></button></td>
+                    <td><button class="btn btn-outline-secondary btn-sm me-1" title="编辑出库记录"
+                        onclick="editOutbound({{ o.id }},'{{ o.purpose }}','{{ o.purpose_detail or '' }}','{{ o.courier_company or '' }}','{{ o.tracking_number or '' }}','{{ o.customer_name or '' }}','{{ o.customer_contact or '' }}','{{ o.customer_company or '' }}','{{ o.address or '' }}','{{ o.remarks or '' }}')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-outline-danger btn-sm" title="删除出库记录"
+                        onclick="deleteOutbound({{ o.id }})"><i class="bi bi-trash"></i></button></td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><i class="bi bi-truck" style="font-size:3rem;"></i><p>暂无出库记录</p></div>{% endif %}
@@ -653,6 +655,14 @@ document.getElementById('asForm').addEventListener('submit',function(e){e.preven
 // 完成售后
 document.getElementById('compForm').addEventListener('submit',function(e){e.preventDefault();
     post('/api/aftersales/complete/'+document.getElementById('completeId').value,{send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value},'completeModal',document.getElementById('compBtn'));});
+// 删除出库记录
+function deleteOutbound(id){
+    if(!confirm('确定要删除这条出库记录吗？此操作不可恢复。'))return;
+    fetch('/api/outbound/'+id,{method:'DELETE'})
+        .then(function(r){return r.json();})
+        .then(function(d){st(d.message,d.success);if(d.success)reload();})
+        .catch(function(){st('网络错误',false);});
+}
 // 编辑出库记录
 function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,customer_company,address,remarks){
     document.getElementById('editOutboundId').value=id;

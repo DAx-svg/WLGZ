@@ -854,6 +854,25 @@ def api_outbound_edit(record_id):
     return jsonify({'success': True, 'message': '出库记录已更新'})
 
 
+@app.route('/api/outbound/<int:record_id>', methods=['DELETE'])
+def api_outbound_delete(record_id):
+    """删除出库记录"""
+    db = get_db()
+    record = db.execute("SELECT * FROM outbound_records WHERE id=?", (record_id,)).fetchone()
+    if not record:
+        return jsonify({'success': False, 'message': '出库记录不存在'}), 404
+    sn = record['sn']
+    db.execute("DELETE FROM outbound_records WHERE id=?", (record_id,))
+    # 如果该物料当前是「已出库」且没有其他出库记录，恢复为「在库」
+    mat = db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()
+    if mat and mat['status'] == '已出库':
+        remaining = db.execute("SELECT COUNT(*) FROM outbound_records WHERE sn=?", (sn,)).fetchone()[0]
+        if remaining == 0:
+            db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
+    db.commit()
+    return jsonify({'success': True, 'message': '出库记录已删除'})
+
+
 @app.route('/api/restock/<sn>', methods=['POST'])
 def api_restock(sn):
     """物料重新入库（状态改回在库）"""
