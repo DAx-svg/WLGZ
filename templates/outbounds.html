@@ -42,6 +42,7 @@
                             <th>地址</th>
                             <th>快递公司</th>
                             <th>快递单号</th>
+                            <th>寄回</th>
                             <th>备注</th>
                         </tr>
                     </thead>
@@ -72,6 +73,15 @@
                             <td><small class="text-muted">{{ o.address or '-' }}</small></td>
                             <td>{{ o.courier_company or '-' }}</td>
                             <td><code>{{ o.tracking_number or '-' }}</code></td>
+                            <td>
+                                {% if o.return_status == '待寄回' %}
+                                <span class="badge bg-warning text-dark">待寄回</span>
+                                {% if o.return_sn %}<div><small class="text-muted">{{ o.return_sn }}</small></div>{% endif %}
+                                {% elif o.return_status == '已寄回' %}
+                                <span class="badge bg-success">已寄回</span>
+                                {% if o.return_sn %}<div><small class="text-muted">{{ o.return_sn }}</small></div>{% endif %}
+                                {% else %}<span class="text-muted">-</span>{% endif %}
+                            </td>
                             <td class="text-muted">{{ o.remarks or '-' }}</td>
                         </tr>
                         {% endfor %}

@@ -115,6 +115,20 @@
                         <div id="purposeDetailBox" class="mb-3" style="display:none;">
                             <label class="form-label" id="purposeDetailLabel">用途说明</label>
                             <textarea class="form-control" id="purposeDetail" rows="2"></textarea>
+                            <!-- 寄回追踪（仅售后出库显示） -->
+                            <div id="returnCheckGroup" style="display:none;" class="mt-2">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="needReturn" onchange="document.getElementById('returnFields').style.display=this.checked?'':'none'">
+                                    <label class="form-check-label" for="needReturn">需要客户寄回故障件</label>
+                                </div>
+                                <div id="returnFields" style="display:none;">
+                                    <div class="mb-2"><label class="form-label">客户需寄回的故障件 SN</label><input class="form-control" id="returnSn" placeholder="可后续补充" style="font-family:monospace;"></div>
+                                    <div class="row g-2">
+                                        <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="returnCourier" placeholder="可后续补充"></div>
+                                        <div class="col-6"><label class="form-label">寄回快递单号</label><input class="form-control" id="returnTracking" placeholder="可后续补充"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="row g-2 mb-3">
                             <div class="col-6">
@@ -511,12 +525,13 @@ function refreshList() {
 document.getElementById('purpose').addEventListener('change', function(){
     var box = document.getElementById('purposeDetailBox');
     var label = document.getElementById('purposeDetailLabel');
+    var retGroup = document.getElementById('returnCheckGroup');
     var v = this.value;
-    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; }
-    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; }
-    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; }
-    else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; }
-    else { box.style.display='none'; }
+    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; retGroup.style.display='none'; }
+    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; retGroup.style.display=''; }
+    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; retGroup.style.display='none'; }
+    else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; retGroup.style.display='none'; }
+    else { box.style.display='none'; retGroup.style.display='none'; }
 });
 
 // ====== 提交 ======
@@ -550,6 +565,12 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         tracking_number: document.getElementById('trackingNumber').value.trim(),
         remarks: document.getElementById('remarks').value.trim()
     };
+    if(payload.purpose==='售后出库' && document.getElementById('needReturn').checked){
+        payload.return_status='待寄回';
+        payload.return_sn=document.getElementById('returnSn').value.trim();
+        payload.return_courier=document.getElementById('returnCourier').value.trim();
+        payload.return_tracking=document.getElementById('returnTracking').value.trim();
+    }
 
     fetch('/api/outbound/batch', {
         method: 'POST',

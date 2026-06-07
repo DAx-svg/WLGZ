@@ -154,6 +154,13 @@ def init_db():
         db.execute("ALTER TABLE after_sales_records ADD COLUMN completed_time TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # v2.3: 出库记录寄回追踪（售后出库时记录客户需寄回的故障件信息）
+    for col, default in [('return_status', "'无需寄回'"), ('return_sn', "''"),
+                         ('return_courier', "''"), ('return_tracking', "''")]:
+        try:
+            db.execute(f"ALTER TABLE outbound_records ADD COLUMN {col} TEXT DEFAULT {default}")
+        except sqlite3.OperationalError:
+            pass
     db.commit()
 
 
@@ -332,16 +339,18 @@ def index():
         sns = [m['sn'] for m in materials]
         placeholders = ','.join(['?'] * len(sns))
         rows = db.execute(
-            f"SELECT sn, purpose, purpose_detail FROM outbound_records WHERE sn IN ({placeholders}) "
+            f"SELECT sn, purpose, purpose_detail, return_status FROM outbound_records WHERE sn IN ({placeholders}) "
             "GROUP BY sn HAVING MAX(outbound_time)",
             sns
         ).fetchall()
         purpose_map = {r['sn']: r['purpose'] for r in rows}
         detail_map = {r['sn']: r['purpose_detail'] for r in rows}
+        return_map = {r['sn']: r['return_status'] for r in rows}
         materials = [dict(m) for m in materials]
         for m in materials:
             m['latest_purpose'] = purpose_map.get(m['sn'], '')
             m['latest_purpose_detail'] = detail_map.get(m['sn'], '')
+            m['latest_return_status'] = return_map.get(m['sn'], '')
 
     # 批量查询物料所属品类
     if materials:
@@ -837,16 +846,23 @@ def api_outbound(sn):
         return jsonify({'success': False, 'message': '故障中的物料不能出库'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    # 寄回追踪（仅售后出库时有效）
+    return_status = data.get('return_status', '无需寄回')
+    return_sn = data.get('return_sn', '')
+    return_courier = data.get('return_courier', '')
+    return_tracking = data.get('return_tracking', '')
     db.execute(
         "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
         "courier_company, tracking_number, customer_name, customer_contact, "
-        "customer_company, address, remarks) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "customer_company, address, remarks, return_status, return_sn, "
+        "return_courier, return_tracking) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (sn, now, data.get('purpose', ''), data.get('purpose_detail', ''),
          data.get('courier_company', ''), data.get('tracking_number', ''),
          data.get('customer_name', ''), data.get('customer_contact', ''),
          data.get('customer_company', ''), data.get('address', ''),
-         data.get('remarks', '')))
+         data.get('remarks', ''), return_status, return_sn,
+         return_courier, return_tracking))
     db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': '出库操作完成'})
@@ -863,12 +879,16 @@ def api_outbound_edit(record_id):
     db.execute(
         "UPDATE outbound_records SET purpose=?, purpose_detail=?, courier_company=?, "
         "tracking_number=?, customer_name=?, customer_contact=?, "
-        "customer_company=?, address=?, remarks=? WHERE id=?",
+        "customer_company=?, address=?, remarks=?, "
+        "return_status=?, return_sn=?, return_courier=?, return_tracking=? WHERE id=?",
         (data.get('purpose', ''), data.get('purpose_detail', ''),
          data.get('courier_company', ''), data.get('tracking_number', ''),
          data.get('customer_name', ''), data.get('customer_contact', ''),
          data.get('customer_company', ''), data.get('address', ''),
-         data.get('remarks', ''), record_id))
+         data.get('remarks', ''),
+         data.get('return_status', '无需寄回'), data.get('return_sn', ''),
+         data.get('return_courier', ''), data.get('return_tracking', ''),
+         record_id))
     db.commit()
     return jsonify({'success': True, 'message': '出库记录已更新'})
 
@@ -890,6 +910,25 @@ def api_outbound_delete(record_id):
             db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': '出库记录已删除'})
+
+
+@app.route('/api/outbound/<int:record_id>/return', methods=['POST'])
+def api_outbound_return(record_id):
+    """标记售后出库的故障件已寄回"""
+    db = get_db()
+    record = db.execute("SELECT * FROM outbound_records WHERE id=?", (record_id,)).fetchone()
+    if not record:
+        return jsonify({'success': False, 'message': '出库记录不存在'}), 404
+    if record['return_status'] == '已寄回':
+        return jsonify({'success': False, 'message': '已标记为已寄回，无需重复操作'}), 400
+    data = request.get_json(force=True)
+    db.execute(
+        "UPDATE outbound_records SET return_status='已寄回', return_sn=?, "
+        "return_courier=?, return_tracking=? WHERE id=?",
+        (data.get('return_sn', ''), data.get('return_courier', ''),
+         data.get('return_tracking', ''), record_id))
+    db.commit()
+    return jsonify({'success': True, 'message': '已标记为寄回完成'})
 
 
 @app.route('/api/restock/<sn>', methods=['POST'])
@@ -1132,15 +1171,21 @@ def api_outbound_batch():
     company = data.get('customer_company', '')
     address = data.get('address', '')
     remarks = data.get('remarks', '')
+    return_status = data.get('return_status', '无需寄回')
+    return_sn = data.get('return_sn', '')
+    return_courier = data.get('return_courier', '')
+    return_tracking = data.get('return_tracking', '')
 
     for sn in sns:
         db.execute(
             "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
             "courier_company, tracking_number, customer_name, customer_contact, "
-            "customer_company, address, remarks) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "customer_company, address, remarks, return_status, return_sn, "
+            "return_courier, return_tracking) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
-             company, address, remarks))
+             company, address, remarks, return_status, return_sn,
+             return_courier, return_tracking))
         db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
     db.commit()
     return jsonify({'success': True, 'message': f'已批量出库 {len(sns)} 个物料'})

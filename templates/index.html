@@ -368,6 +368,7 @@
                                 <span class="text-muted">-</span>
                                 {% endif %}
                                 {% if m.latest_purpose_detail %}<div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">{{ m.latest_purpose_detail }}</div>{% endif %}
+                                {% if m.latest_return_status == '待寄回' %}<span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>{% elif m.latest_return_status == '已寄回' %}<span class="badge bg-success" style="font-size:0.7rem;">已寄回</span>{% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">{{ m.inbound_time }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="{{ m.remarks or '' }}">{{ m.remarks or '-' }}</small></td>
