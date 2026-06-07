@@ -430,7 +430,21 @@ function completeActiveAS(){
     document.getElementById('completeId').value={{ active_as_id }};
 }
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
-function reload(){setTimeout(()=>location.reload(),800);}
+function reload(){var tab=document.querySelector('.nav-link.active');if(tab)sessionStorage.setItem('activeTab',tab.getAttribute('data-bs-target'));setTimeout(()=>location.reload(),800);}
+// 页面加载时恢复上次活跃的标签页
+(function(){
+    var target=sessionStorage.getItem('activeTab');
+    if(target){
+        var btn=document.querySelector('.nav-link[data-bs-target="'+target+'"]');
+        if(btn){new bootstrap.Tab(btn).show();}
+    }
+})();
+// 切换标签时记住当前标签
+document.querySelectorAll('.nav-link[data-bs-toggle="tab"]').forEach(function(tab){
+    tab.addEventListener('shown.bs.tab',function(e){
+        sessionStorage.setItem('activeTab',e.target.getAttribute('data-bs-target'));
+    });
+});
 // ====== 智能解析客户信息 ======
 function smartParse(text){
     var r={name:'',contact:'',company:'',address:''};
