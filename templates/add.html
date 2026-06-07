@@ -50,7 +50,6 @@
                                     <option value="{{ c.id }}">{{ c.parent_name }} → {{ c.name }}</option>
                                     {% endfor %}
                                 </select>
-                                <div id="singleCatHints" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">硬件版本</label>
@@ -71,6 +70,27 @@
                             <div class="col-12">
                                 <label class="form-label">备注</label>
                                 <textarea class="form-control" id="singleRemarks" rows="2"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <!-- 同类SN参考 -->
+                                <div id="singleCatRef" class="mt-2" style="display:none;">
+                                    <h6 class="text-muted small mb-1"><i class="bi bi-collection"></i> 同类SN参考（最近添加）</h6>
+                                    <div class="table-responsive" style="max-height:240px;overflow-y:auto;">
+                                        <table class="table table-sm table-hover small align-middle mb-0">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th>SN</th>
+                                                    <th>硬件版本</th>
+                                                    <th>软件版本</th>
+                                                    <th>硬件描述</th>
+                                                    <th>软件描述</th>
+                                                    <th>入库</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-12">
                                 <button type="submit" class="btn btn-primary" id="singleBtn">
@@ -107,7 +127,6 @@
                                     <option value="{{ c.id }}">{{ c.parent_name }} → {{ c.name }}</option>
                                     {% endfor %}
                                 </select>
-                                <div id="batchCatHints" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">硬件版本</label>
@@ -128,6 +147,27 @@
                             <div class="col-12">
                                 <label class="form-label">备注</label>
                                 <textarea class="form-control" id="batchRemarks" rows="2"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <!-- 同类SN参考 -->
+                                <div id="batchCatRef" class="mt-2" style="display:none;">
+                                    <h6 class="text-muted small mb-1"><i class="bi bi-collection"></i> 同类SN参考（最近添加）</h6>
+                                    <div class="table-responsive" style="max-height:240px;overflow-y:auto;">
+                                        <table class="table table-sm table-hover small align-middle mb-0">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th>SN</th>
+                                                    <th>硬件版本</th>
+                                                    <th>软件版本</th>
+                                                    <th>硬件描述</th>
+                                                    <th>软件描述</th>
+                                                    <th>入库</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-12">
                                 <button type="submit" class="btn btn-primary" id="batchBtn">
@@ -236,25 +276,34 @@ function undoAutoFill(isBatch){
     st('已撤销自动填充', true);
 }
 
-// ====== 同品类SN参考提示 ======
-async function loadCatHints(catId, isBatch){
-    var hintEl = document.getElementById(isBatch ? 'batchCatHints' : 'singleCatHints');
-    if(!catId){ hintEl.style.display = 'none'; hintEl.innerHTML = ''; return; }
+// ====== 同品类SN参考表格 ======
+async function loadCatRef(catId, isBatch){
+    var refEl = document.getElementById(isBatch ? 'batchCatRef' : 'singleCatRef');
+    if(!catId){ refEl.style.display = 'none'; return; }
     try {
-        var r = await fetch('/api/category_sn_samples/' + catId);
-        var d = await r.json();
-        if(!d.samples || d.samples.length === 0){ hintEl.style.display = 'none'; hintEl.innerHTML = ''; return; }
-        hintEl.style.display = '';
-        hintEl.innerHTML = '<small class="text-muted"><i class="bi bi-tag"></i> 同类SN参考：</small> '
-            + d.samples.map(function(s){ return '<code class="me-1" style="font-size:0.85em;background:#e9ecef;padding:1px 4px;border-radius:3px;">' + s + '</code>'; }).join('');
-    } catch(e) { hintEl.style.display = 'none'; }
+        var r = await fetch('/api/category_recent_sns/' + catId);
+        var rows = await r.json();
+        if(!rows || rows.length === 0){ refEl.style.display = 'none'; return; }
+        refEl.style.display = '';
+        var tbody = refEl.querySelector('tbody');
+        tbody.innerHTML = rows.map(function(m){
+            return '<tr>' +
+                '<td><code style="font-size:0.85em;">' + (m.sn || '') + '</code></td>' +
+                '<td>' + (m.hw_version || '-') + '</td>' +
+                '<td>' + (m.sw_version || '-') + '</td>' +
+                '<td class="text-truncate" style="max-width:140px;" title="' + (m.hw_description || '') + '">' + (m.hw_description || '-') + '</td>' +
+                '<td class="text-truncate" style="max-width:140px;" title="' + (m.sw_description || '') + '">' + (m.sw_description || '-') + '</td>' +
+                '<td class="text-nowrap small">' + (m.inbound_time || '').substring(0,10) + '</td>' +
+                '</tr>';
+        }).join('');
+    } catch(e) { refEl.style.display = 'none'; }
 }
 
 document.getElementById('singleCat').addEventListener('change', function(){
-    loadCatHints(this.value, false);
+    loadCatRef(this.value, false);
 });
 document.getElementById('batchCat').addEventListener('change', function(){
-    loadCatHints(this.value, true);
+    loadCatRef(this.value, true);
 });
 
 // 手动触发按钮
@@ -337,8 +386,8 @@ function restoreFormData(){
             if(el) el.value = data[id];
         });
         // 恢复品类选择后显示同类SN提示
-        if(data.singleCat) loadCatHints(data.singleCat, false);
-        if(data.batchCat) loadCatHints(data.batchCat, true);
+        if(data.singleCat) loadCatRef(data.singleCat, false);
+        if(data.batchCat) loadCatRef(data.batchCat, true);
     } catch(e) {}
 }
 // 所有字段输入时自动保存

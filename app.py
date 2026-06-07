@@ -1194,6 +1194,27 @@ def api_category_sn_samples(cat_id):
     return jsonify({'samples': samples})
 
 
+@app.route('/api/category_recent_sns/<int:cat_id>')
+def api_category_recent_sns(cat_id):
+    """返回指定品类下最近添加的物料（供新增时参考）"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT sn, hw_version, sw_version, hw_description, sw_description, "
+        "inbound_time, remarks FROM materials WHERE category_id = ? "
+        "ORDER BY inbound_time DESC LIMIT 10",
+        (cat_id,)
+    ).fetchall()
+    return jsonify([{
+        'sn': r['sn'],
+        'hw_version': r['hw_version'],
+        'sw_version': r['sw_version'],
+        'hw_description': r['hw_description'],
+        'sw_description': r['sw_description'],
+        'inbound_time': r['inbound_time'],
+        'remarks': r['remarks']
+    } for r in rows])
+
+
 # ==========================================================================
 #                         批量出库
 # ==========================================================================
