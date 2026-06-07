@@ -276,6 +276,7 @@ def index():
     parent_id = request.args.get('parent', '').strip()
     show_orphan = request.args.get('orphan', '').strip()
     filter_status = request.args.get('status', '').strip()
+    filter_return = request.args.get('returning', '').strip()
     show_month_in = request.args.get('month_in', '').strip()
     show_month_out = request.args.get('month_out', '').strip()
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
@@ -300,6 +301,14 @@ def index():
         materials = db.execute(
             "SELECT * FROM materials WHERE status = ? ORDER BY inbound_time DESC",
             (filter_status,)
+        ).fetchall()
+    elif filter_return:
+        # 筛选有待寄回出库记录的物料
+        materials = db.execute(
+            "SELECT DISTINCT m.* FROM materials m "
+            "JOIN outbound_records o ON m.sn = o.sn "
+            "WHERE o.return_status = '待寄回' "
+            "ORDER BY m.inbound_time DESC"
         ).fetchall()
     elif sub_cat_id:
         materials = db.execute(
@@ -459,6 +468,9 @@ def index():
         "SELECT COUNT(*) AS cnt FROM fault_records WHERE resolved_time LIKE ?",
         (f'{this_month}%',)
     ).fetchone()['cnt']
+    stats['returning'] = db.execute(
+        "SELECT COUNT(DISTINCT sn) AS cnt FROM outbound_records WHERE return_status='待寄回'"
+    ).fetchone()['cnt']
 
     # 售后记录筛选参数
     show_month_as_new = request.args.get('month_as_new', '').strip()
@@ -522,6 +534,7 @@ def index():
                            current_parent=parent_id,
                            show_orphan=show_orphan,
                            filter_status=filter_status,
+                           filter_return=filter_return,
                            show_month_in=show_month_in,
                            show_month_out=show_month_out,
                            show_month_as_new=show_month_as_new,

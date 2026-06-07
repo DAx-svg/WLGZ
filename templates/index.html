@@ -133,6 +133,14 @@
                 </div>
             </div>
         </div>
+        <div class="col-4 col-sm-3 col-md-2">
+            <div class="card text-center border-warning" style="cursor:pointer; background:#fff3cd;" onclick="window.location='/?returning=1'">
+                <div class="card-body p-2">
+                    <div class="fs-4 fw-bold text-warning">{{ stats.returning }}</div>
+                    <small class="text-muted text-nowrap">待寄回</small>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- SN 搜索 -->
@@ -234,6 +242,7 @@
             <span>
                 {% if search %}搜索 "{{ search }}" 结果：{% endif %}
                 {% if filter_status %}状态「{{ filter_status }}」：{% endif %}
+                {% if filter_return %}待寄回故障件：{% endif %}
                 {% if show_orphan %}未分类物料：{% endif %}
                 {% if current_cat %}按品类筛选：{% endif %}
                 {% if show_month_in %}本月入库物料：{% endif %}
@@ -243,7 +252,7 @@
                 {% if show_month_fault_new %}本月新增故障：{% endif %}
                 {% if show_month_fault_done %}本月修复故障：{% endif %}
                 {% if current_parent %}大类筛选：{% endif %}
-                {% if not search and not current_cat and not current_parent and not show_orphan and not filter_status and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
+                {% if not search and not current_cat and not current_parent and not show_orphan and not filter_status and not filter_return and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
                 <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% elif show_month_fault_new or show_month_fault_done %}{{ fault_records_list|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
             </span>
             <div>
