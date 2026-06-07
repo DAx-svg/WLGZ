@@ -189,8 +189,8 @@ async function autoFillFromSimilar(sn, isBatch){
             ['Hw', 'hw_version'],
             ['Sw', 'sw_version'],
             ['HwDesc', 'hw_description'],
-            ['SwDesc', 'sw_description'],
-            ['Remarks', 'remarks']
+            ['SwDesc', 'sw_description']
+            // 备注不自动填充，因为它是单SN专属信息
         ];
 
         fields.forEach(function(f){
