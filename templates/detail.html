@@ -253,6 +253,7 @@
 <div class="modal fade" id="editModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
 <div class="modal-header"><h5 class="modal-title">编辑 - {{ material.sn }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
 <form id="editForm"><div class="modal-body"><div class="row g-3">
+    <div class="col-md-3"><label class="form-label">SN <span class="text-muted small">(可修改)</span></label><input class="form-control fw-bold text-primary" id="editSn" value="{{ material.sn }}" style="font-family:monospace;"></div>
     <div class="col-md-3"><label class="form-label">品类（小类）</label>
         <select class="form-select" id="editCat">
             <option value="">-- 不分类 --</option>
@@ -597,7 +598,23 @@ async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<s
 
 // 编辑
 document.getElementById('editForm').addEventListener('submit',function(e){e.preventDefault();
-    post('/api/material/edit/'+SN,{hw_version:document.getElementById('editHw').value,sw_version:document.getElementById('editSw').value,category_id:document.getElementById('editCat').value||null,hw_description:document.getElementById('editHwDesc').value,sw_description:document.getElementById('editSwDesc').value,remarks:document.getElementById('editRemarks').value,change_description:document.getElementById('editChangeDesc').value},'editModal',document.getElementById('editBtn'));});
+    var newSn=document.getElementById('editSn').value.trim();
+    var payload={hw_version:document.getElementById('editHw').value,sw_version:document.getElementById('editSw').value,category_id:document.getElementById('editCat').value||null,hw_description:document.getElementById('editHwDesc').value,sw_description:document.getElementById('editSwDesc').value,remarks:document.getElementById('editRemarks').value,change_description:document.getElementById('editChangeDesc').value};
+    if(newSn!==SN)payload.new_sn=newSn;
+    var btn=document.getElementById('editBtn');
+    btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
+    fetch('/api/material/edit/'+SN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d){
+        st(d.message,d.success);
+        if(d.success){
+            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            if(d.sn&&d.sn!==SN){window.location.href='/detail/'+encodeURIComponent(d.sn);}
+            else{reload();}
+        }
+    }).catch(function(){st('网络错误',false);})
+    .finally(function(){btn.disabled=false;btn.innerHTML='保存';});
+});
 // 出库用途切换
 document.getElementById('outPurpose').addEventListener('change',function(){
     var p=this.value;

@@ -752,6 +752,24 @@ def api_edit_material(sn):
     old_hw, old_sw = material['hw_version'], material['sw_version']
     new_hw = data.get('hw_version', old_hw)
     new_sw = data.get('sw_version', old_sw)
+    new_sn = data.get('new_sn', '').strip()
+
+    # SN 变更：检查是否为空、是否重复
+    if new_sn and new_sn != sn:
+        if db.execute("SELECT sn FROM materials WHERE sn=?", (new_sn,)).fetchone():
+            return jsonify({'success': False, 'message': f'SN "{new_sn}" 已存在，请使用其他SN'})
+        # 暂时关闭外键约束，更新所有关联表
+        db.execute("PRAGMA foreign_keys=OFF")
+        try:
+            db.execute("UPDATE materials SET sn=? WHERE sn=?", (new_sn, sn))
+            db.execute("UPDATE version_changes SET sn=? WHERE sn=?", (new_sn, sn))
+            db.execute("UPDATE outbound_records SET sn=? WHERE sn=?", (new_sn, sn))
+            db.execute("UPDATE after_sales_records SET sn=? WHERE sn=?", (new_sn, sn))
+            db.execute("UPDATE fault_records SET sn=? WHERE sn=?", (new_sn, sn))
+        finally:
+            db.execute("PRAGMA foreign_keys=ON")
+        # 后续操作使用新 SN
+        sn = new_sn
 
     cat_id = data.get('category_id')
     if cat_id:
@@ -783,7 +801,7 @@ def api_edit_material(sn):
             "old_version, new_version, description) VALUES (?,?,?,?,?,?)",
             (sn, now, '软件', old_sw, new_sw, change_desc or '编辑时变更软件版本'))
     db.commit()
-    return jsonify({'success': True, 'message': '物料信息更新成功'})
+    return jsonify({'success': True, 'message': '物料信息更新成功', 'sn': sn})
 
 
 @app.route('/api/outbound/<sn>', methods=['POST'])
