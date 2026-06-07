@@ -184,7 +184,15 @@ async function doSubmit(formId, btnId, isBatch){
         var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         var d=await r.json();
         st(d.message, d.success);
-        if(d.success) document.getElementById(formId).reset();
+        if(d.success){
+            document.getElementById(formId).reset();
+            // 清除当前表单的记忆数据
+            var prefix = isBatch ? 'batch' : 'single';
+            try {
+                var data = JSON.parse(sessionStorage.getItem(FORM_KEY));
+                if(data){ Object.keys(data).forEach(function(k){ if(k.indexOf(prefix)===0) delete data[k]; }); sessionStorage.setItem(FORM_KEY, JSON.stringify(data)); }
+            } catch(e) {}
+        }
     } catch(e) { st('网络错误',false); }
     btn.disabled=false;
     btn.innerHTML='<i class="bi bi-check-lg"></i> '+(isBatch?'批量添加':'添加物料');
@@ -192,6 +200,36 @@ async function doSubmit(formId, btnId, isBatch){
 
 document.getElementById('singleForm').addEventListener('submit',function(e){e.preventDefault();doSubmit('singleForm','singleBtn',false);});
 document.getElementById('batchForm').addEventListener('submit',function(e){e.preventDefault();doSubmit('batchForm','batchBtn',true);});
+
+// ====== 表单记忆：自动保存/恢复已填信息 ======
+var FORM_KEY = 'addFormData';
+function saveFormData(){
+    var data = {};
+    document.querySelectorAll('#singleForm input, #singleForm textarea, #singleForm select').forEach(function(el){
+        if(el.id) data[el.id] = el.value;
+    });
+    document.querySelectorAll('#batchForm input, #batchForm textarea, #batchForm select').forEach(function(el){
+        if(el.id) data[el.id] = el.value;
+    });
+    sessionStorage.setItem(FORM_KEY, JSON.stringify(data));
+}
+function restoreFormData(){
+    try {
+        var data = JSON.parse(sessionStorage.getItem(FORM_KEY));
+        if(!data) return;
+        Object.keys(data).forEach(function(id){
+            var el = document.getElementById(id);
+            if(el) el.value = data[id];
+        });
+    } catch(e) {}
+}
+// 所有字段输入时自动保存
+document.querySelectorAll('#singleForm input, #singleForm textarea, #singleForm select, #batchForm input, #batchForm textarea, #batchForm select').forEach(function(el){
+    el.addEventListener('input', saveFormData);
+    el.addEventListener('change', saveFormData);
+});
+// 页面加载时恢复
+restoreFormData();
 </script>
 </body>
 </html>
