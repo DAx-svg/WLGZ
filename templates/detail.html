@@ -448,10 +448,23 @@ function smartParse(text){
     // 7. 地址（标签式）
     m=text.match(/(?:地址|收货地址|住址|收货地)[：:]\s*(.+)/);
     if(m)r.address=m[1].replace(/[\n\r].*/,'').trim();
-    // 8. 地址（无标签：省市区路号）
+    // 8. 地址（无标签：省市区路号 — 宽松捕获，尾部裁掉公司/电话/姓名）
     if(!r.address){
-        m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:省|市|区|县|镇|乡|路|街|道|巷|大道|工业区|工业园|产业园)[一-龥a-zA-Z\d\s\(\)（）\-\#号栋幢层楼室]{3,80})/);
-        if(m)r.address=m[1];
+        m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:省|市|区|县|镇|乡|路|街|道|巷|大道|工业区|工业园|产业园).+)/);
+        if(m){
+            r.address = m[1].replace(/[\n\r].*/, '');  // 截断换行
+            // 从尾部裁掉已识别的电话、姓名、公司名（只裁末尾，保留嵌入地址中的公司名）
+            var trimList = [r.contact, r.name, r.company].filter(Boolean);
+            for (var t = 0; t < trimList.length; t++) {
+                var s = trimList[t];
+                var idx = r.address.lastIndexOf(s);
+                // 只裁靠近末尾的（距末尾不超过3个字），避免裁掉地址中间的公司名
+                if (idx >= 0 && (r.address.length - idx - s.length) <= 3) {
+                    r.address = r.address.substring(0, idx);
+                }
+            }
+            r.address = r.address.replace(/[\s,，。、\-\#]+$/, '').trim();
+        }
     }
     // 9. 遍历各行：公司名所在行、纯中文姓名
     for(var i=0;i<lines.length;i++){

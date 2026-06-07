@@ -204,7 +204,21 @@ function smartParse(text){
     if(m)r.company=m[0].replace(/^[号栋幢层楼室门座]+/, '');  // 去掉地址残余字
     if(!r.company){m=text.match(/(?:公司|单位|抬头)[：:]\s*([一-龥]{2,30})/);if(m)r.company=m[1];}
     m=text.match(/(?:地址|收货地址|住址|收货地)[：:]\s*(.+)/);if(m)r.address=m[1].replace(/[\n\r].*/,'').trim();
-    if(!r.address){m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:省|市|区|县|镇|乡|路|街|道|巷|大道|工业区|工业园|产业园)[一-龥a-zA-Z\d\s\(\)（）\-\#号栋幢层楼室]{3,80})/);if(m)r.address=m[1];}
+    // 地址（无标签：省市区路号 — 宽松捕获，尾部裁掉公司/电话/姓名）
+    if(!r.address){m=text.match(/([一-龥]{2,10}[省市]?[一-龥]{2,20}(?:省|市|区|县|镇|乡|路|街|道|巷|大道|工业区|工业园|产业园).+)/);
+        if(m){
+            r.address = m[1].replace(/[\n\r].*/, '');
+            var trimList = [r.contact, r.name, r.company].filter(Boolean);
+            for (var t = 0; t < trimList.length; t++) {
+                var s = trimList[t];
+                var idx = r.address.lastIndexOf(s);
+                if (idx >= 0 && (r.address.length - idx - s.length) <= 3) {
+                    r.address = r.address.substring(0, idx);
+                }
+            }
+            r.address = r.address.replace(/[\s,，。、\-\#]+$/, '').trim();
+        }
+    }
     for(var i=0;i<lines.length;i++){
         var ln=lines[i].trim();if(!ln)continue;
         if(r.address&&ln===r.address.substring(0,Math.min(ln.length,r.address.length)))continue;
