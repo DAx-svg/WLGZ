@@ -1164,6 +1164,36 @@ def api_similar_sn(sn):
     return jsonify({'found': False})
 
 
+@app.route('/api/category_sn_samples/<int:cat_id>')
+def api_category_sn_samples(cat_id):
+    """返回指定品类下不同命名模式的代表性 SN（各取最新一条）"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT sn FROM materials WHERE category_id = ? ORDER BY inbound_time DESC",
+        (cat_id,)
+    ).fetchall()
+    if not rows:
+        return jsonify({'samples': []})
+
+    sns = [r['sn'] for r in rows]
+    CLUSTER_THRESHOLD = 0.7  # 同类命名模式聚类阈值
+    clusters = []  # [(representative, [members]), ...]
+
+    for sn in sns:
+        matched = False
+        for rep, members in clusters:
+            if levenshtein_ratio(sn, rep) >= CLUSTER_THRESHOLD:
+                members.append(sn)
+                matched = True
+                break
+        if not matched:
+            clusters.append((sn, [sn]))
+
+    # 每类取代表（已是该类最新 SN），最多 5 类
+    samples = [rep for rep, _ in clusters[:5]]
+    return jsonify({'samples': samples})
+
+
 # ==========================================================================
 #                         批量出库
 # ==========================================================================

@@ -50,6 +50,7 @@
                                     <option value="{{ c.id }}">{{ c.parent_name }} → {{ c.name }}</option>
                                     {% endfor %}
                                 </select>
+                                <div id="singleCatHints" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">硬件版本</label>
@@ -106,6 +107,7 @@
                                     <option value="{{ c.id }}">{{ c.parent_name }} → {{ c.name }}</option>
                                     {% endfor %}
                                 </select>
+                                <div id="batchCatHints" class="mt-1" style="display:none;"></div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">硬件版本</label>
@@ -234,6 +236,27 @@ function undoAutoFill(isBatch){
     st('已撤销自动填充', true);
 }
 
+// ====== 同品类SN参考提示 ======
+async function loadCatHints(catId, isBatch){
+    var hintEl = document.getElementById(isBatch ? 'batchCatHints' : 'singleCatHints');
+    if(!catId){ hintEl.style.display = 'none'; hintEl.innerHTML = ''; return; }
+    try {
+        var r = await fetch('/api/category_sn_samples/' + catId);
+        var d = await r.json();
+        if(!d.samples || d.samples.length === 0){ hintEl.style.display = 'none'; hintEl.innerHTML = ''; return; }
+        hintEl.style.display = '';
+        hintEl.innerHTML = '<small class="text-muted"><i class="bi bi-tag"></i> 同类SN参考：</small> '
+            + d.samples.map(function(s){ return '<code class="me-1" style="font-size:0.85em;background:#e9ecef;padding:1px 4px;border-radius:3px;">' + s + '</code>'; }).join('');
+    } catch(e) { hintEl.style.display = 'none'; }
+}
+
+document.getElementById('singleCat').addEventListener('change', function(){
+    loadCatHints(this.value, false);
+});
+document.getElementById('batchCat').addEventListener('change', function(){
+    loadCatHints(this.value, true);
+});
+
 // 手动触发按钮
 document.getElementById('singleFillBtn').addEventListener('click', function(){
     var sn = document.getElementById('singleSn').value.trim();
@@ -313,6 +336,9 @@ function restoreFormData(){
             var el = document.getElementById(id);
             if(el) el.value = data[id];
         });
+        // 恢复品类选择后显示同类SN提示
+        if(data.singleCat) loadCatHints(data.singleCat, false);
+        if(data.batchCat) loadCatHints(data.batchCat, true);
     } catch(e) {}
 }
 // 所有字段输入时自动保存
