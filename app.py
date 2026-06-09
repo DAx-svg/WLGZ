@@ -12,6 +12,7 @@ v2.0 新增：二级品类管理、品类统计汇总。
 
 import os
 import re
+import sys
 import shutil
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -1367,40 +1368,11 @@ def api_db_download():
 
 
 def auto_sync_from_cloud():
-    """本地启动时自动从云端拉取最新数据库，本地数据多时跳过"""
-    import urllib.request
-    REMOTE = 'https://daxsvg.pythonanywhere.com/api/db/download?token=wlgz-sync-2026'
+    """本地启动时自动双向同步，失败不阻塞启动"""
+    import subprocess
     try:
-        print("[同步] 正在检查云端数据...")
-        with urllib.request.urlopen(REMOTE, timeout=15) as resp:
-            if resp.status != 200:
-                print(f"[同步] 云端返回 {resp.status}，使用本地数据库")
-                return
-            remote_data = resp.read()
-        if len(remote_data) < 1024:
-            print("[同步] 云端数据异常，使用本地数据库")
-            return
-        if os.path.exists(DATABASE):
-            with open(DATABASE, 'rb') as f:
-                local_data = f.read()
-            if local_data == remote_data:
-                print(f"[同步] 数据已是最新 ({len(remote_data)/1024:.1f} KB)")
-                return
-            # 比较记录数，本地多则跳过
-            tmp = DATABASE + '.tmp'
-            with open(tmp, 'wb') as f:
-                f.write(remote_data)
-            lc = sqlite3.connect(DATABASE).execute("SELECT COUNT(*) FROM materials").fetchone()[0]
-            rc = sqlite3.connect(tmp).execute("SELECT COUNT(*) FROM materials").fetchone()[0]
-            os.remove(tmp)
-            if lc > rc:
-                print(f"[同步] ⚠ 本地 {lc} 条 > 云端 {rc} 条，跳过同步（保护本地数据）")
-                print(f"[同步] 提示：云端宕机期间本地新增的数据不会被覆盖")
-                return
-            shutil.copy2(DATABASE, DATABASE + '.bak')
-        with open(DATABASE, 'wb') as f:
-            f.write(remote_data)
-        print(f"[同步] 完成 ({len(remote_data)/1024:.1f} KB)")
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_db.py')
+        subprocess.run([sys.executable, script], timeout=60)
     except Exception as e:
         print(f"[同步] 失败({e})，使用本地已有数据")
 
