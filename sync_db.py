@@ -13,6 +13,10 @@ import sys
 import shutil
 import urllib.request
 
+# Windows 中文编码兼容
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 # 配置
 REMOTE_URL = 'https://daxsvg.pythonanywhere.com/api/db/download?token=wlgz-sync-2026'
 LOCAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'material.db')
