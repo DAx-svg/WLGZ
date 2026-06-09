@@ -12,6 +12,7 @@ v2.0 新增：二级品类管理、品类统计汇总。
 
 import os
 import re
+import shutil
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template, request, redirect, url_for, jsonify, g
@@ -1366,11 +1367,11 @@ def api_db_download():
 
 
 def auto_sync_from_cloud():
-    """本地启动时自动从云端拉取最新数据库"""
+    """本地启动时自动从云端拉取最新数据库，本地数据多时跳过"""
     import urllib.request
     REMOTE = 'https://daxsvg.pythonanywhere.com/api/db/download?token=wlgz-sync-2026'
     try:
-        print("[同步] 正在从云端拉取最新数据...")
+        print("[同步] 正在检查云端数据...")
         with urllib.request.urlopen(REMOTE, timeout=15) as resp:
             if resp.status != 200:
                 print(f"[同步] 云端返回 {resp.status}，使用本地数据库")
@@ -1379,19 +1380,27 @@ def auto_sync_from_cloud():
         if len(remote_data) < 1024:
             print("[同步] 云端数据异常，使用本地数据库")
             return
-        # 备份旧文件
-        bak = DATABASE + '.bak'
         if os.path.exists(DATABASE):
             with open(DATABASE, 'rb') as f:
-                old = f.read()
-            if old == remote_data:
+                local_data = f.read()
+            if local_data == remote_data:
                 print(f"[同步] 数据已是最新 ({len(remote_data)/1024:.1f} KB)")
                 return
-            with open(bak, 'wb') as f:
-                f.write(old)
+            # 比较记录数，本地多则跳过
+            tmp = DATABASE + '.tmp'
+            with open(tmp, 'wb') as f:
+                f.write(remote_data)
+            lc = sqlite3.connect(DATABASE).execute("SELECT COUNT(*) FROM materials").fetchone()[0]
+            rc = sqlite3.connect(tmp).execute("SELECT COUNT(*) FROM materials").fetchone()[0]
+            os.remove(tmp)
+            if lc > rc:
+                print(f"[同步] ⚠ 本地 {lc} 条 > 云端 {rc} 条，跳过同步（保护本地数据）")
+                print(f"[同步] 提示：云端宕机期间本地新增的数据不会被覆盖")
+                return
+            shutil.copy2(DATABASE, DATABASE + '.bak')
         with open(DATABASE, 'wb') as f:
             f.write(remote_data)
-        print(f"[同步] 完成 — {len(remote_data)/1024:.1f} KB")
+        print(f"[同步] 完成 ({len(remote_data)/1024:.1f} KB)")
     except Exception as e:
         print(f"[同步] 失败({e})，使用本地已有数据")
 
