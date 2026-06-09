@@ -1365,7 +1365,39 @@ def api_db_download():
                      as_attachment=True, download_name='material.db')
 
 
+def auto_sync_from_cloud():
+    """本地启动时自动从云端拉取最新数据库"""
+    import urllib.request
+    REMOTE = 'https://daxsvg.pythonanywhere.com/api/db/download?token=wlgz-sync-2026'
+    try:
+        print("[同步] 正在从云端拉取最新数据...")
+        with urllib.request.urlopen(REMOTE, timeout=15) as resp:
+            if resp.status != 200:
+                print(f"[同步] 云端返回 {resp.status}，使用本地数据库")
+                return
+            remote_data = resp.read()
+        if len(remote_data) < 1024:
+            print("[同步] 云端数据异常，使用本地数据库")
+            return
+        # 备份旧文件
+        bak = DATABASE + '.bak'
+        if os.path.exists(DATABASE):
+            with open(DATABASE, 'rb') as f:
+                old = f.read()
+            if old == remote_data:
+                print(f"[同步] 数据已是最新 ({len(remote_data)/1024:.1f} KB)")
+                return
+            with open(bak, 'wb') as f:
+                f.write(old)
+        with open(DATABASE, 'wb') as f:
+            f.write(remote_data)
+        print(f"[同步] 完成 — {len(remote_data)/1024:.1f} KB")
+    except Exception as e:
+        print(f"[同步] 失败({e})，使用本地已有数据")
+
+
 if __name__ == '__main__':
+    auto_sync_from_cloud()
     create_app()
     print("=" * 60)
     print("  物料全流程追溯系统 v2.0")
