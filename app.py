@@ -1350,6 +1350,21 @@ def health():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# 数据库同步密匙（与 sync_db.py 保持一致）
+SYNC_TOKEN = 'wlgz-sync-2026'
+
+
+@app.route('/api/db/download')
+def api_db_download():
+    """下载数据库文件（用于本地同步）"""
+    token = request.args.get('token', '')
+    if token != SYNC_TOKEN:
+        return jsonify({'error': 'unauthorized'}), 403
+    from flask import send_file
+    return send_file(DATABASE, mimetype='application/octet-stream',
+                     as_attachment=True, download_name='material.db')
+
+
 if __name__ == '__main__':
     create_app()
     print("=" * 60)
