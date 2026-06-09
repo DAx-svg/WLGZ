@@ -1329,9 +1329,25 @@ def api_outbound_batch():
 
 def create_app():
     with app.app_context():
-        init_db()
-        insert_sample_data()
+        try:
+            init_db()
+        except Exception as e:
+            print(f"[ERROR] 数据库初始化失败: {e}")
+        try:
+            insert_sample_data()
+        except Exception as e:
+            print(f"[ERROR] 示例数据插入失败: {e}")
     return app
+
+
+@app.route('/health')
+def health():
+    """健康检查接口 — PythonAnywhere 定时任务可用此接口防止休眠"""
+    try:
+        get_db().execute("SELECT 1")
+        return jsonify({'status': 'ok', 'db': 'connected'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 if __name__ == '__main__':
