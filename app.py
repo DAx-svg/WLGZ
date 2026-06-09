@@ -26,7 +26,10 @@ def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DATABASE)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")
+        try:
+            g.db.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass  # WAL not supported (e.g. NFS on PythonAnywhere), use default
         g.db.execute("PRAGMA busy_timeout=5000")
         g.db.execute("PRAGMA foreign_keys=ON")
     return g.db
