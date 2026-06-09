@@ -9,8 +9,10 @@
 同步规则：
     1. 网络不通 → 跳过，本地不受影响
     2. 数据相同 → 跳过
-    3. 本地有新数据，云端没有 → 自动推送到云端，再拉回云端全量
-    4. 用 --force → 云端覆盖本地
+    3. 本地有新数据，云端没有 → 自动推送到云端
+    4. 云端有而本地没有 → 拉取到本地
+    5. 本地有但云端已删（上次同步后消失的）→ 本地也删除
+    6. 用 --force → 云端覆盖本地（包括删除）
 """
 
 import os
@@ -27,7 +29,9 @@ if sys.platform == 'win32':
 REMOTE_BASE = 'https://daxsvg.pythonanywhere.com'
 REMOTE_DB = REMOTE_BASE + '/api/db/download?token=wlgz-sync-2026'
 LOCAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'material.db')
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_state.json')
 FORCE = '--force' in sys.argv
+
 
 # ---------------------------------------------------------------------------
 # 工具：通过云端 API 添加物料
@@ -52,6 +56,14 @@ def push_material_to_cloud(sn, row):
         return json.loads(resp.read())
 
 
+def delete_material_from_local(sn):
+    """从本地数据库删除一条物料"""
+    db = sqlite3.connect(LOCAL_FILE)
+    db.execute("DELETE FROM materials WHERE sn=?", (sn,))
+    db.commit()
+    db.close()
+
+
 def merge_status_to_cloud(sn, new_status):
     """通过云端编辑API同步状态变更"""
     payload = json.dumps({'status': new_status}).encode('utf-8')
@@ -61,6 +73,30 @@ def merge_status_to_cloud(sn, new_status):
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
+
+
+# ---------------------------------------------------------------------------
+# 状态文件：记录上次同步时的云端 SN 集合，用于判断删除
+# ---------------------------------------------------------------------------
+def load_sync_state():
+    """加载上次同步状态，返回 set of SNs 或空集合"""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return set(data.get('last_cloud_sns', []))
+        except Exception:
+            pass
+    return set()
+
+
+def save_sync_state(cloud_sns):
+    """保存本次同步后的云端 SN 集合"""
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+        json.dump({
+            'last_cloud_sns': sorted(cloud_sns),
+            'last_sync_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }, f, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
@@ -107,45 +143,70 @@ try:
     local_count = len(local_sns)
     remote_count = len(remote_sns)
 
-    # 5. 本地有而云端没有的 SN → 自动推送到云端
-    only_local = local_sns - remote_sns
+    # 5. 加载上次同步时的云端 SN（用于判断删除）
+    last_cloud_sns = load_sync_state()
+    first_sync = (len(last_cloud_sns) == 0)
+
+    # 6. 本地有而云端没有的 SN
+    only_local = sorted(local_sns - remote_sns)
+
+    # 7. 云端有而本地没有的 SN（云端新增的，正常拉取即可，后续覆盖会带上）
+    only_remote = sorted(remote_sns - local_sns)
+
+    print(f'\n  本地 {local_count} 条 · 云端 {remote_count} 条')
+
+    if only_remote:
+        print(f'  云端新增 {len(only_remote)} 条: {", ".join(only_remote[:5])}'
+              + ('...' if len(only_remote) > 5 else ''))
 
     if only_local and not FORCE:
-        print(f'\n  本地 {local_count} 条 · 云端 {remote_count} 条')
-        print(f'  发现本地独有 {len(only_local)} 条 SN，正在推送到云端...')
+        # 区分：哪些是本地新增的（不在上次云端SN里），哪些是云端删掉的（在上次云端SN里）
+        new_local = [sn for sn in only_local if sn not in last_cloud_sns]
+        deleted_from_cloud = [sn for sn in only_local if sn in last_cloud_sns]
 
-        pushed = 0
-        failed = []
-        for sn in only_local:
-            row = local_db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
-            try:
-                result = push_material_to_cloud(sn, row)
-                if result.get('success'):
-                    pushed += 1
-                    print(f'    ✓ {sn}')
-                else:
-                    failed.append((sn, result.get('message', '未知错误')))
-                    print(f'    ✗ {sn} — {result.get("message", "")}')
-            except Exception as e:
-                failed.append((sn, str(e)))
-                print(f'    ✗ {sn} — {e}')
+        if deleted_from_cloud:
+            if first_sync:
+                print(f'  ⚠ 首次同步：本地多出 {len(deleted_from_cloud)} 条，保留不删')
+            else:
+                print(f'  云端已删除 {len(deleted_from_cloud)} 条，同步删除本地:')
+                for sn in deleted_from_cloud:
+                    delete_material_from_local(sn)
+                    print(f'    ✗ {sn}')
 
-        if pushed > 0:
-            print(f'  已推送 {pushed} 条到云端，重新拉取全量数据...')
-            # 重新下载（因为云端已有最新数据）
-            with urllib.request.urlopen(REMOTE_DB, timeout=30) as resp:
-                remote_data = resp.read()
+        if new_local:
+            print(f'  发现本地新增 {len(new_local)} 条，推送到云端...')
+            pushed = 0
+            failed = []
+            for sn in new_local:
+                row = local_db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+                try:
+                    result = push_material_to_cloud(sn, row)
+                    if result.get('success'):
+                        pushed += 1
+                        print(f'    ✓ {sn}')
+                    else:
+                        failed.append((sn, result.get('message', '未知错误')))
+                        print(f'    ✗ {sn} — {result.get("message", "")}')
+                except Exception as e:
+                    failed.append((sn, str(e)))
+                    print(f'    ✗ {sn} — {e}')
 
-        if failed:
-            print(f'  失败 {len(failed)} 条，请手动检查')
-            for sn, reason in failed:
-                print(f'    - {sn}: {reason}')
+            if pushed > 0:
+                print(f'  已推送 {pushed} 条，重新拉取...')
+                with urllib.request.urlopen(REMOTE_DB, timeout=30) as resp:
+                    remote_data = resp.read()
+
+            if failed:
+                print(f'  失败 {len(failed)} 条，请手动检查')
+
+        elif not deleted_from_cloud:
+            print('  无新增数据')
 
     elif only_local and FORCE:
         print(f'  --force 模式：云端({remote_count}条)覆盖本地({local_count}条)')
         print(f'  本地独有的 {len(only_local)} 条将被丢弃')
 
-    # 6. 状态变更检测：本地和云端都有但状态不同的SN
+    # 8. 状态变更检测：本地和云端都有但状态不同的SN
     if not FORCE:
         common_sns = local_sns & remote_sns
         status_conflicts = []
@@ -164,15 +225,19 @@ try:
     remote_db.close()
     os.remove(tmp)
 
-    # 7. 备份并写入
-    if FORCE or not only_local or (only_local and len(only_local) == 0):
-        pass  # 正常覆盖流程
-    elif only_local:
-        pass  # 已推送，继续覆盖
-
+    # 9. 备份并写入
     shutil.copy2(LOCAL_FILE, LOCAL_FILE + '.bak')
     with open(LOCAL_FILE, 'wb') as f:
         f.write(remote_data)
+
+    # 10. 保存同步状态
+    # 重新打开新的本地数据库读取最终 SN 集合
+    final_db = sqlite3.connect(LOCAL_FILE)
+    final_db.row_factory = sqlite3.Row
+    final_sns = {r['sn'] for r in final_db.execute("SELECT sn FROM materials")}
+    final_db.close()
+    save_sync_state(final_sns)
+
     print(f'  同步完成 → {len(remote_data)/1024:.1f} KB')
 
 except urllib.error.HTTPError as e:
