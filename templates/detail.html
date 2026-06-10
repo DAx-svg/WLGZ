@@ -361,11 +361,11 @@
 <div class="modal fade" id="editOutboundModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
 <div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="bi bi-pencil"></i> 编辑出库记录</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
 <form id="editOutboundForm"><div class="modal-body">
-    <input type="hidden" id="editOutboundId">
+    <input type="hidden" id="obEditId">
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">出库用途</label>
-            <select class="form-select" id="editPurpose">
+            <select class="form-select" id="obEditPurpose">
                 <option value="">-- 请选择 --</option>
                 <option value="销售出库">销售出库</option>
                 <option value="售后出库">售后出库</option>
@@ -376,61 +376,61 @@
         </div>
         <div class="col-6">
             <label class="form-label">用途说明</label>
-            <input type="text" class="form-control" id="editPurposeDetail">
+            <input type="text" class="form-control" id="obEditPurposeDetail">
         </div>
     </div>
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">联系人</label>
-            <input type="text" class="form-control" id="editCustomerName">
+            <input type="text" class="form-control" id="obEditCustomerName">
         </div>
         <div class="col-6">
             <label class="form-label">联系方式</label>
-            <input type="text" class="form-control" id="editCustomerContact">
+            <input type="text" class="form-control" id="obEditCustomerContact">
         </div>
     </div>
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">公司名称</label>
-            <textarea class="form-control" id="editCustomerCompany" rows="2"></textarea>
+            <textarea class="form-control" id="obEditCustomerCompany" rows="2"></textarea>
         </div>
         <div class="col-6">
             <label class="form-label">地址</label>
-            <textarea class="form-control" id="editAddress" rows="2"></textarea>
+            <textarea class="form-control" id="obEditAddress" rows="2"></textarea>
         </div>
     </div>
-    <div id="editSmartBox" class="mt-1 mb-2">
-        <textarea class="form-control form-control-sm" id="editSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
+    <div id="obEditSmartBox" class="mt-1 mb-2">
+        <textarea class="form-control form-control-sm" id="obEditSmartInput" rows="3" placeholder="粘贴含客户信息的文本..."></textarea>
         <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="smartFillEdit()">🔍 识别填充</button>
     </div>
     <div class="row g-2 mb-2">
         <div class="col-6">
             <label class="form-label">快递公司</label>
-            <input type="text" class="form-control" id="editCourierCompany">
+            <input type="text" class="form-control" id="obEditCourierCompany">
         </div>
         <div class="col-6">
             <label class="form-label">快递单号</label>
-            <input type="text" class="form-control" id="editTrackingNumber">
+            <input type="text" class="form-control" id="obEditTrackingNumber">
         </div>
     </div>
     <div class="mb-2">
         <label class="form-label">备注</label>
-        <textarea class="form-control" id="editRemarks" rows="2"></textarea>
+        <textarea class="form-control" id="obEditRemarks" rows="2"></textarea>
     </div>
     <!-- 寄回信息（编辑） -->
     <hr>
     <div class="mb-2"><label class="form-label">寄回状态</label>
-        <select class="form-select" id="editReturnStatus">
+        <select class="form-select" id="obEditReturnStatus">
             <option value="无需寄回">无需寄回</option>
             <option value="待寄回">待寄回</option>
             <option value="已寄回">已寄回</option>
         </select>
     </div>
-    <div id="editReturnFields">
-        <div class="mb-2"><label class="form-label">客户寄回故障件 SN</label><input class="form-control" id="editReturnSn" style="font-family:monospace;"></div>
+    <div id="obEditReturnFields">
+        <div class="mb-2"><label class="form-label">客户寄回故障件 SN</label><input class="form-control" id="obEditReturnSn" style="font-family:monospace;"></div>
         <div class="row g-2 mb-2">
-            <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="editReturnCourier"></div>
-            <div class="col-6"><label class="form-label">寄回快递单号</label><input class="form-control" id="editReturnTracking"></div>
+            <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="obEditReturnCourier"></div>
+            <div class="col-6"><label class="form-label">寄回快递单号</label><input class="form-control" id="obEditReturnTracking"></div>
         </div>
     </div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" id="editOutboundBtn" type="submit">保存修改</button></div>
@@ -647,12 +647,12 @@ function smartFillOutbound(){
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
 function smartFillEdit(){
-    var p=smartParse(document.getElementById('editSmartInput').value);
-    if(p.name)document.getElementById('editCustomerName').value=p.name;
-    else if(p.company)document.getElementById('editCustomerName').value=p.company;
-    if(p.contact)document.getElementById('editCustomerContact').value=p.contact;
-    if(p.company)document.getElementById('editCustomerCompany').value=p.company;
-    if(p.address)document.getElementById('editAddress').value=p.address;
+    var p=smartParse(document.getElementById('obEditSmartInput').value);
+    if(p.name)document.getElementById('obEditCustomerName').value=p.name;
+    else if(p.company)document.getElementById('obEditCustomerName').value=p.company;
+    if(p.contact)document.getElementById('obEditCustomerContact').value=p.contact;
+    if(p.company)document.getElementById('obEditCustomerCompany').value=p.company;
+    if(p.address)document.getElementById('obEditAddress').value=p.address;
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
 async function post(url,payload,modalId,btn){btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';try{var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});var d=await r.json();st(d.message,d.success);if(d.success){if(modalId){bootstrap.Modal.getInstance(document.getElementById(modalId)).hide();}reload();}}catch(e){st('网络错误',false);}btn.disabled=false;}
@@ -736,39 +736,39 @@ function markReturned(id){
 }
 // 编辑出库记录
 function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,customer_company,address,remarks,return_status,return_sn,return_courier,return_tracking){
-    document.getElementById('editOutboundId').value=id;
-    document.getElementById('editPurpose').value=purpose;
-    document.getElementById('editPurposeDetail').value=purpose_detail;
-    document.getElementById('editCourierCompany').value=courier_company;
-    document.getElementById('editTrackingNumber').value=tracking_number;
-    document.getElementById('editCustomerName').value=customer_name;
-    document.getElementById('editCustomerContact').value=customer_contact;
-    document.getElementById('editCustomerCompany').value=customer_company;
-    document.getElementById('editAddress').value=address;
-    document.getElementById('editRemarks').value=remarks;
-    document.getElementById('editReturnStatus').value=return_status||'无需寄回';
-    document.getElementById('editReturnSn').value=return_sn||'';
-    document.getElementById('editReturnCourier').value=return_courier||'';
-    document.getElementById('editReturnTracking').value=return_tracking||'';
+    document.getElementById('obEditId').value=id;
+    document.getElementById('obEditPurpose').value=purpose;
+    document.getElementById('obEditPurposeDetail').value=purpose_detail;
+    document.getElementById('obEditCourierCompany').value=courier_company;
+    document.getElementById('obEditTrackingNumber').value=tracking_number;
+    document.getElementById('obEditCustomerName').value=customer_name;
+    document.getElementById('obEditCustomerContact').value=customer_contact;
+    document.getElementById('obEditCustomerCompany').value=customer_company;
+    document.getElementById('obEditAddress').value=address;
+    document.getElementById('obEditRemarks').value=remarks;
+    document.getElementById('obEditReturnStatus').value=return_status||'无需寄回';
+    document.getElementById('obEditReturnSn').value=return_sn||'';
+    document.getElementById('obEditReturnCourier').value=return_courier||'';
+    document.getElementById('obEditReturnTracking').value=return_tracking||'';
     new bootstrap.Modal(document.getElementById('editOutboundModal')).show();
 }
 document.getElementById('editOutboundForm').addEventListener('submit',function(e){e.preventDefault();
     var btn=document.getElementById('editOutboundBtn');btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
-    var id=document.getElementById('editOutboundId').value;
+    var id=document.getElementById('obEditId').value;
     var payload={
-        purpose:document.getElementById('editPurpose').value,
-        purpose_detail:document.getElementById('editPurposeDetail').value.trim(),
-        courier_company:document.getElementById('editCourierCompany').value.trim(),
-        tracking_number:document.getElementById('editTrackingNumber').value.trim(),
-        customer_name:document.getElementById('editCustomerName').value.trim(),
-        customer_contact:document.getElementById('editCustomerContact').value.trim(),
-        customer_company:document.getElementById('editCustomerCompany').value.trim(),
-        address:document.getElementById('editAddress').value.trim(),
-        remarks:document.getElementById('editRemarks').value.trim(),
-        return_status:document.getElementById('editReturnStatus').value,
-        return_sn:document.getElementById('editReturnSn').value.trim(),
-        return_courier:document.getElementById('editReturnCourier').value.trim(),
-        return_tracking:document.getElementById('editReturnTracking').value.trim()
+        purpose:document.getElementById('obEditPurpose').value,
+        purpose_detail:document.getElementById('obEditPurposeDetail').value.trim(),
+        courier_company:document.getElementById('obEditCourierCompany').value.trim(),
+        tracking_number:document.getElementById('obEditTrackingNumber').value.trim(),
+        customer_name:document.getElementById('obEditCustomerName').value.trim(),
+        customer_contact:document.getElementById('obEditCustomerContact').value.trim(),
+        customer_company:document.getElementById('obEditCustomerCompany').value.trim(),
+        address:document.getElementById('obEditAddress').value.trim(),
+        remarks:document.getElementById('obEditRemarks').value.trim(),
+        return_status:document.getElementById('obEditReturnStatus').value,
+        return_sn:document.getElementById('obEditReturnSn').value.trim(),
+        return_courier:document.getElementById('obEditReturnCourier').value.trim(),
+        return_tracking:document.getElementById('obEditReturnTracking').value.trim()
     };
     fetch('/api/outbound/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
         .then(function(r){return r.json();}).then(function(d){
@@ -778,8 +778,8 @@ document.getElementById('editOutboundForm').addEventListener('submit',function(e
         }).catch(function(){st('网络错误',false);btn.disabled=false;btn.innerHTML='保存修改';});
 });
 // 编辑弹窗中寄回状态切换
-document.getElementById('editReturnStatus').addEventListener('change',function(){
-    document.getElementById('editReturnFields').style.display=this.value==='无需寄回'?'none':'';
+document.getElementById('obEditReturnStatus').addEventListener('change',function(){
+    document.getElementById('obEditReturnFields').style.display=this.value==='无需寄回'?'none':'';
 });
 // 故障
 document.getElementById('faultForm').addEventListener('submit',function(e){e.preventDefault();
