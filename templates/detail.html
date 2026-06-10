@@ -144,6 +144,7 @@
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aftersalesPanel">售后记录 <span class="badge bg-secondary">{{ aftersales|length }}</span></button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#faultPanel">故障记录 <span class="badge bg-secondary">{{ fault|length }}</span></button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#versionPanel">版本变更 <span class="badge bg-secondary">{{ version_changes|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#timelinePanel" onclick="loadTimeline()">时间线 <i class="bi bi-clock-history"></i></button></li>
     </ul>
 
     <div class="tab-content pt-3">
@@ -258,6 +259,10 @@
             </table></div>
             {% else %}<div class="empty-state"><i class="bi bi-git" style="font-size:3rem;"></i><p>暂无版本变更</p></div>{% endif %}
         </div>
+        <!-- 时间线 -->
+        <div class="tab-pane fade" id="timelinePanel">
+            <div id="timelineContent"><div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">加载中...</p></div></div>
+        </div>
     </div>
 </div>
 
@@ -297,7 +302,9 @@
     </div>
     <!-- 客户信息（销售/售后显示） -->
     <div id="outCustomerGroup" style="display:none;">
-        <div class="mb-2"><label class="form-label">联系人 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer" placeholder="收货人姓名"></div>
+        <div class="mb-2"><label class="form-label">联系人 <span class="text-danger">*</span></label><input class="form-control" id="outCustomer" placeholder="收货人姓名" list="outCustomerList"></div>
+        <datalist id="outCustomerList"></datalist>
+        <div class="mb-2"><button type="button" class="btn btn-outline-info btn-sm" onclick="loadCustomerHistory()" title="从历史记录中选择客户信息">📋 历史客户</button></div>
         <div class="mb-2"><label class="form-label">客户联系方式</label><input class="form-control" id="outContact" placeholder="手机/电话"></div>
         <div class="mb-2"><label class="form-label">公司名称</label><textarea class="form-control" id="outCompany" rows="2" placeholder="客户公司抬头"></textarea></div>
         <div class="mb-2"><label class="form-label">地址</label><textarea class="form-control" id="outAddress" rows="2" placeholder="收货地址"></textarea></div>
@@ -351,8 +358,15 @@
 <div class="modal fade" id="completeModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
 <div class="modal-header bg-success text-white"><h5 class="modal-title">完成售后</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
 <form id="compForm"><input type="hidden" id="completeId"><div class="modal-body">
-    <div class="mb-2"><label class="form-label">寄出快递（返客户）</label><input class="form-control" id="compSendCourier" required></div>
-    <div class="mb-2"><label class="form-label">寄出快递单号</label><input class="form-control" id="compSendTrack" required></div>
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="compReturnToCustomer" checked onchange="document.getElementById('compReturnFields').style.display=this.checked?'':'none'">
+        <label class="form-check-label fw-bold" for="compReturnToCustomer">修好后返还给客户</label>
+        <div class="form-text">不勾选则物料恢复为"在库"状态</div>
+    </div>
+    <div id="compReturnFields">
+        <div class="mb-2"><label class="form-label">寄出快递（返客户）</label><input class="form-control" id="compSendCourier"></div>
+        <div class="mb-2"><label class="form-label">寄出快递单号</label><input class="form-control" id="compSendTrack"></div>
+    </div>
     <div class="mb-2"><label class="form-label">处理备注</label><textarea class="form-control" id="compRemarks" rows="2"></textarea></div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" id="compBtn" type="submit">确认完成</button></div>
 </form></div></div></div>
@@ -646,6 +660,34 @@ function smartFillOutbound(){
     if(p.address)document.getElementById('outAddress').value=p.address;
     if(!p.name&&!p.company&&!p.contact&&!p.address)st('未能识别到客户信息，请手动输入',false);
 }
+
+var customerHistoryLoaded=false;
+async function loadCustomerHistory(){
+    if(customerHistoryLoaded){document.getElementById('customerHistoryModal').style.display='block';return;}
+    try{
+        var r=await fetch('/api/customer_history'),d=await r.json();
+        if(!d.length){st('暂无历史客户记录',false);return;}
+        var html='<div class="modal fade show" id="customerHistoryModal" style="display:block;background:rgba(0,0,0,0.5);" onclick="if(event.target===this)this.style.display=\'none\'"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5>历史客户记录（最近50条）</h5><button type="button" class="btn-close" onclick="document.getElementById(\'customerHistoryModal\').style.display=\'none\'"></button></div><div class="modal-body" style="max-height:60vh;overflow-y:auto;"><table class="table table-sm table-hover"><thead><tr><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>次数</th><th></th></tr></thead><tbody>';
+        d.forEach(function(c,i){
+            html+='<tr><td>'+esc(c.name)+'</td><td>'+esc(c.company)+'</td><td>'+esc(c.contact)+'</td><td><small>'+esc(c.address)+'</small></td><td>'+c.count+'</td><td><button class="btn btn-outline-primary btn-sm" onclick="fillCustomer('+i+')">选择</button></td></tr>';
+        });
+        html+='</tbody></table></div></div></div></div>';
+        var div=document.createElement('div');div.innerHTML=html;
+        document.body.appendChild(div);
+        window._customerData=d;
+        customerHistoryLoaded=true;
+    }catch(e){st('加载历史客户失败',false);}
+}
+function fillCustomer(i){
+    var c=window._customerData[i];
+    document.getElementById('outCustomer').value=c.name||'';
+    document.getElementById('outContact').value=c.contact||'';
+    document.getElementById('outCompany').value=c.company||'';
+    document.getElementById('outAddress').value=c.address||'';
+    document.getElementById('customerHistoryModal').style.display='none';
+    st('已填充客户信息: '+(c.name||c.company),true);
+}
+
 function smartFillEdit(){
     var p=smartParse(document.getElementById('obEditSmartInput').value);
     if(p.name)document.getElementById('obEditCustomerName').value=p.name;
@@ -717,7 +759,8 @@ document.getElementById('asForm').addEventListener('submit',function(e){e.preven
     post('/api/aftersales/'+SN,{return_courier:document.getElementById('asCourier').value,return_tracking:document.getElementById('asTracking').value,problem_description:document.getElementById('asProblem').value},'aftersalesModal',document.getElementById('asBtn'));});
 // 完成售后
 document.getElementById('compForm').addEventListener('submit',function(e){e.preventDefault();
-    post('/api/aftersales/complete/'+document.getElementById('completeId').value,{send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value},'completeModal',document.getElementById('compBtn'));});
+    var payload={send_back_courier:document.getElementById('compSendCourier').value,send_back_tracking:document.getElementById('compSendTrack').value,remarks:document.getElementById('compRemarks').value,return_to_customer:document.getElementById('compReturnToCustomer').checked};
+    post('/api/aftersales/complete/'+document.getElementById('completeId').value,payload,'completeModal',document.getElementById('compBtn'));});
 // 删除出库记录
 function deleteOutbound(id){
     if(!confirm('确定要删除这条出库记录吗？此操作不可恢复。'))return;
@@ -789,6 +832,39 @@ document.getElementById('faultForm').addEventListener('submit',function(e){e.pre
 document.getElementById('resolveFaultForm').addEventListener('submit',function(e){e.preventDefault();
     if(!document.getElementById('faultSolution').value.trim()){st('请填写解决方案',false);return;}
     post('/api/fault/resolve/'+document.getElementById('resolveFaultId').value,{solution:document.getElementById('faultSolution').value},'resolveFaultModal',document.getElementById('resolveFaultBtn'));});
+
+function esc(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+var timelineLoaded=false;
+async function loadTimeline(){
+    if(timelineLoaded)return;
+    var el=document.getElementById('timelineContent');
+    try{
+        var r=await fetch('/api/timeline/'+SN),d=await r.json();
+        if(!d.events||!d.events.length){el.innerHTML='<div class="empty-state"><i class="bi bi-clock-history" style="font-size:3rem;"></i><p>暂无时间线记录</p></div>';return;}
+        var typeIcons={'inbound':'📥','outbound':'📤','aftersales':'🔧','aftersales_done':'✅','fault':'⚠️','fault_resolved':'🛠️','version_change':'🔄','log':'📝'};
+        var typeColors={'inbound':'#198754','outbound':'#fd7e14','aftersales':'#dc3545','aftersales_done':'#198754','fault':'#ffc107','fault_resolved':'#0d6efd','version_change':'#6f42c1','log':'#6c757d'};
+        var html='<div style="position:relative;padding-left:30px;">';
+        html+='<div style="position:absolute;left:8px;top:0;bottom:0;width:3px;background:#dee2e6;"></div>';
+        d.events.forEach(function(e){
+            var icon=typeIcons[e.type]||'📌';
+            var color=typeColors[e.type]||'#6c757d';
+            html+='<div style="position:relative;margin-bottom:16px;">';
+            html+='<div style="position:absolute;left:-26px;top:4px;width:16px;height:16px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 2px '+color+';"></div>';
+            html+='<div style="background:#f8f9fa;border-radius:8px;padding:10px 14px;">';
+            html+='<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html+='<strong>'+icon+' '+esc(e.label)+'</strong>';
+            html+='<small class="text-muted">'+esc(e.time)+'</small>';
+            html+='</div>';
+            if(e.detail)html+='<div class="text-muted mt-1" style="font-size:0.9em;">'+esc(e.detail)+'</div>';
+            html+='</div></div>';
+        });
+        html+='<div style="position:absolute;left:4px;bottom:0;width:11px;height:11px;border-radius:50%;background:#6c757d;border:2px solid #fff;"></div>';
+        html+='</div>';
+        el.innerHTML=html;
+        timelineLoaded=true;
+    }catch(e){el.innerHTML='<div class="text-danger text-center p-3">加载失败: '+esc(e.message)+'</div>';}
+}
 </script>
 </body>
 </html>

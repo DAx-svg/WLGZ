@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>库存盘点 — 物料追溯系统</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background: #f5f7fa; }
+        .cat-card { cursor: pointer; transition: all 0.2s; }
+        .cat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .cat-card.selected { border-color: #198754 !important; background: #f0fff4; }
+        .sn-check-item { display: inline-block; margin: 2px; }
+        .mismatch { background: #fff3cd; border-left: 3px solid #ffc107; padding: 6px 10px; margin: 4px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4><i class="bi bi-clipboard-check"></i> 库存盘点</h4>
+        <div>
+            <a href="/" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> 返回首页</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧：品类列表 -->
+        <div class="col-md-4">
+            <div class="card"><div class="card-header fw-bold">品类列表</div>
+            <div class="card-body" style="max-height:70vh;overflow-y:auto;">
+                {% for p in categories %}
+                <div class="mb-3">
+                    <h6 class="text-primary">{{ p.name }}</h6>
+                    {% for s in p.subs %}
+                    <div class="card cat-card mb-1" onclick="selectCategory({{ s.id }},'{{ s.name }}')" id="cat-{{ s.id }}">
+                        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                            <span>{{ s.name }}</span>
+                            <span class="badge bg-secondary">{{ s.total }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div></div>
+        </div>
+
+        <!-- 右侧：盘点区域 -->
+        <div class="col-md-8">
+            <div class="card"><div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold">盘点物料 <span id="selectedCatName" class="text-muted">— 请先在左侧选择品类</span></span>
+                <button class="btn btn-success btn-sm" id="btnCheckAll" disabled onclick="checkAll()"><i class="bi bi-check-all"></i> 全部在库</button>
+            </div>
+            <div class="card-body" id="checkArea" style="max-height:60vh;overflow-y:auto;">
+                <div class="text-center text-muted p-5"><i class="bi bi-arrow-left-circle" style="font-size:3rem;"></i><p>请在左侧选择要盘点的品类</p></div>
+            </div>
+            <div class="card-footer">
+                <div class="d-flex gap-2">
+                    <textarea class="form-control form-control-sm" id="checkNotes" placeholder="盘点备注（可选）" rows="1" style="flex:1;"></textarea>
+                    <button class="btn btn-primary" id="btnSubmit" disabled onclick="submitCheck()"><i class="bi bi-check-lg"></i> 提交盘点</button>
+                </div>
+                <div id="checkResult" class="mt-2"></div>
+            </div></div>
+
+            <!-- 近期盘点记录 -->
+            <div class="card mt-3"><div class="card-header fw-bold">近期盘点记录</div>
+            <div class="card-body" id="recentChecks" style="max-height:200px;overflow-y:auto;">
+                <div class="text-center text-muted">点击品类开始盘点</div>
+            </div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+var selectedCatId=null, checkedSNs=[], allSNs=[];
+
+async function selectCategory(id,name){
+    document.querySelectorAll('.cat-card').forEach(function(c){c.classList.remove('selected');});
+    document.getElementById('cat-'+id).classList.add('selected');
+    selectedCatId=id;
+    document.getElementById('selectedCatName').textContent='— '+name;
+    document.getElementById('btnCheckAll').disabled=false;
+    document.getElementById('btnSubmit').disabled=false;
+    checkedSNs=[];
+
+    var area=document.getElementById('checkArea');
+    area.innerHTML='<div class="text-center p-3"><div class="spinner-border spinner-border-sm"></div></div>';
+
+    try{
+        var r=await fetch('/api/in_stock_sns?cat='+id),d=await r.json();
+        allSNs=d.map(function(x){return x.sn;});
+        if(!d.length){area.innerHTML='<div class="text-center text-muted p-4">该品类无物料</div>';return;}
+        var html='<div class="mb-2 text-muted small">共 '+d.length+' 个物料，勾选已确认在库的物料</div>';
+        d.forEach(function(m){
+            html+='<div class="sn-check-item"><div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="chk_'+m.sn+'" value="'+m.sn+'" onchange="onCheckChange()"><label class="form-check-label" for="chk_'+m.sn+'"><code>'+m.sn+'</code></label></div></div>';
+        });
+        area.innerHTML=html;
+        loadRecentChecks();
+    }catch(e){area.innerHTML='<div class="text-danger p-3">加载失败: '+e.message+'</div>';}
+}
+
+function onCheckChange(){
+    checkedSNs=[];
+    document.querySelectorAll('#checkArea input[type=checkbox]:checked').forEach(function(cb){checkedSNs.push(cb.value);});
+}
+
+function checkAll(){
+    document.querySelectorAll('#checkArea input[type=checkbox]').forEach(function(cb){cb.checked=true;});
+    checkedSNs=[].concat(allSNs);
+}
+
+async function submitCheck(){
+    if(!selectedCatId||!checkedSNs.length){alert('请先选择品类和物料');return;}
+    var notes=document.getElementById('checkNotes').value.trim();
+    var btn=document.getElementById('btnSubmit');
+    btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm"></span> 提交中...';
+    try{
+        var r=await fetch('/api/inventory/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sns:checkedSNs,notes:notes})});
+        var d=await r.json();
+        var resultEl=document.getElementById('checkResult');
+        if(d.success){
+            var msg='<div class="alert alert-success py-2 mb-0">✅ '+d.message.replace(/\n/g,'<br>')+'</div>';
+            if(d.mismatch&&d.mismatch.length){
+                msg+='<div class="mt-2"><strong>异常项：</strong>';
+                d.mismatch.forEach(function(m){msg+='<div class="mismatch">⚠️ '+m+'</div>';});
+                msg+='</div>';
+            }
+            resultEl.innerHTML=msg;
+            loadRecentChecks();
+        }else{
+            resultEl.innerHTML='<div class="alert alert-danger py-2 mb-0">❌ '+d.message+'</div>';
+        }
+    }catch(e){document.getElementById('checkResult').innerHTML='<div class="alert alert-danger py-2 mb-0">网络错误: '+e.message+'</div>';}
+    btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 提交盘点';
+}
+
+async function loadRecentChecks(){
+    try{
+        var r=await fetch('/api/inventory/check_records?per_page=20'),d=await r.json();
+        if(!d.checks.length){document.getElementById('recentChecks').innerHTML='<div class="text-muted text-center">暂无盘点记录</div>';return;}
+        var grouped={};
+        d.checks.forEach(function(c){
+            var t=c.check_time;
+            if(!grouped[t])grouped[t]=[];
+            grouped[t].push(c);
+        });
+        var html='';
+        Object.keys(grouped).sort().reverse().forEach(function(t){
+            var items=grouped[t];
+            html+='<div class="mb-2"><strong class="text-primary">'+t+'</strong> <span class="badge bg-secondary">'+items.length+'个</span>';
+            var mismatch=items.filter(function(i){return i.found_status!=='在库';});
+            if(mismatch.length)html+=' <span class="badge bg-warning text-dark">'+mismatch.length+'个异常</span>';
+            html+='<br><small class="text-muted">SN: '+items.map(function(i){return i.sn;}).join(', ')+'</small>';
+            if(items[0].notes)html+='<br><small class="text-muted">备注: '+items[0].notes+'</small>';
+            html+='</div>';
+        });
+        document.getElementById('recentChecks').innerHTML=html;
+    }catch(e){}
+}
+loadRecentChecks();
+</script>
+</body>
+</html>

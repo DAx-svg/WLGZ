@@ -53,9 +53,28 @@
             <a href="/batch-outbound" class="btn btn-outline-warning btn-sm">
                 <i class="bi bi-box-arrow-right"></i> 批量出库
             </a>
+            <a href="/inventory" class="btn btn-outline-teal btn-sm" style="border-color:#20c997;color:#20c997;">
+                <i class="bi bi-clipboard-check"></i> 库存盘点
+            </a>
             <a href="/add" class="btn btn-primary btn-sm">
                 <i class="bi bi-plus-lg"></i> 添加新物料
             </a>
+            <div class="dropdown d-inline-block">
+                <button class="btn btn-outline-success btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="bi bi-download"></i> 导出
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="/api/export/materials"><i class="bi bi-file-earmark-spreadsheet"></i> 物料清单 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/outbounds"><i class="bi bi-truck"></i> 出库记录 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/aftersales"><i class="bi bi-wrench"></i> 售后工单 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/faults"><i class="bi bi-exclamation-triangle"></i> 故障记录 CSV</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/api/export/operation_logs"><i class="bi bi-journal-text"></i> 操作日志 CSV</a></li>
+                </ul>
+            </div>
+            <button class="btn btn-outline-dark btn-sm" onclick="window.location='/logs'" title="查看操作日志">
+                <i class="bi bi-journal-text"></i> 操作日志
+            </button>
         </div>
     </div>
 

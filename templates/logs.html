@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>操作日志 — 物料追溯系统</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background: #f5f7fa; }
+        .log-row { font-size: 0.9rem; }
+        .type-badge { font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4><i class="bi bi-journal-text"></i> 操作日志</h4>
+        <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" id="typeFilter" onchange="loadLogs()" style="width:auto;">
+                <option value="">全部类型</option>
+                <option value="add_material">添加物料</option>
+                <option value="edit_material">编辑物料</option>
+                <option value="delete_material">删除物料</option>
+                <option value="outbound">出库</option>
+                <option value="restock">重新入库</option>
+                <option value="aftersales_create">创建售后</option>
+                <option value="aftersales_complete">完成售后</option>
+                <option value="fault_create">创建故障</option>
+                <option value="fault_resolve">修复故障</option>
+                <option value="add_category">添加品类</option>
+                <option value="edit_category">编辑品类</option>
+                <option value="delete_category">删除品类</option>
+                <option value="inventory_check">库存盘点</option>
+            </select>
+            <input class="form-control form-control-sm" id="snFilter" placeholder="搜索 SN..." style="width:200px;" onkeyup="if(event.key==='Enter')loadLogs()">
+            <button class="btn btn-outline-primary btn-sm" onclick="loadLogs()"><i class="bi bi-search"></i></button>
+            <a href="/" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> 返回</a>
+            <a href="/api/export/operation_logs" class="btn btn-outline-success btn-sm"><i class="bi bi-download"></i> 导出CSV</a>
+        </div>
+    </div>
+
+    <div id="logTable">
+        <div class="text-center p-4"><div class="spinner-border"></div></div>
+    </div>
+
+    <div class="d-flex justify-content-center mt-3" id="pagination"></div>
+</div>
+
+<script>
+var currentPage=1;
+function esc(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+var typeLabels={
+    'add_material':'添加物料','edit_material':'编辑物料','delete_material':'删除物料',
+    'outbound':'出库','batch_outbound':'批量出库','edit_outbound':'编辑出库记录',
+    'delete_outbound':'删除出库记录','outbound_return':'寄回完成','restock':'重新入库',
+    'aftersales_create':'创建售后','aftersales_complete':'完成售后',
+    'fault_create':'创建故障','fault_resolve':'修复故障',
+    'add_category':'添加品类','edit_category':'编辑品类','delete_category':'删除品类',
+    'inventory_check':'库存盘点'
+};
+var typeColors={
+    'add_material':'#198754','delete_material':'#dc3545','outbound':'#fd7e14',
+    'restock':'#0d6efd','aftersales_create':'#dc3545','aftersales_complete':'#198754',
+    'fault_create':'#ffc107','fault_resolve':'#0d6efd','edit_material':'#6f42c1'
+};
+
+async function loadLogs(page){
+    currentPage=page||1;
+    var type=document.getElementById('typeFilter').value;
+    var sn=document.getElementById('snFilter').value.trim();
+    var params=new URLSearchParams({page:currentPage,per_page:50});
+    if(type)params.set('type',type);
+    if(sn)params.set('sn',sn);
+    try{
+        var r=await fetch('/api/operation_logs?'+params.toString()),d=await r.json();
+        if(!d.logs.length){document.getElementById('logTable').innerHTML='<div class="text-center text-muted p-5"><i class="bi bi-inbox" style="font-size:3rem;"></i><p>暂无操作日志</p></div>';document.getElementById('pagination').innerHTML='';return;}
+        var html='<div class="table-responsive"><table class="table table-hover table-striped"><thead class="table-dark"><tr><th>时间</th><th>操作类型</th><th>SN</th><th>详情</th><th>IP</th></tr></thead><tbody>';
+        d.logs.forEach(function(l){
+            var color=typeColors[l.op_type]||'#6c757d';
+            html+='<tr class="log-row"><td class="text-nowrap">'+esc(l.op_time)+'</td>';
+            html+='<td><span class="badge type-badge" style="background:'+color+';">'+(typeLabels[l.op_type]||l.op_type)+'</span></td>';
+            html+='<td>'+esc(l.sn||'-')+'</td>';
+            html+='<td>'+esc(l.detail||'-')+'</td>';
+            html+='<td><small class="text-muted">'+esc(l.operator_ip||'-')+'</small></td></tr>';
+        });
+        html+='</tbody></table></div>';
+        document.getElementById('logTable').innerHTML=html;
+
+        var phtml='<ul class="pagination pagination-sm">';
+        for(var i=1;i<=d.total_pages;i++){
+            phtml+='<li class="page-item'+(i===currentPage?' active':'')+'"><a class="page-item page-link" href="#" onclick="loadLogs('+i+');return false;">'+i+'</a></li>';
+        }
+        phtml+='</ul>';
+        document.getElementById('pagination').innerHTML=phtml;
+    }catch(e){document.getElementById('logTable').innerHTML='<div class="text-danger text-center p-3">加载失败: '+esc(e.message)+'</div>';}
+}
+loadLogs();
+</script>
+</body>
+</html>

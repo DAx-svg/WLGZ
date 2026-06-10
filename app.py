@@ -131,6 +131,28 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_fault_sn ON fault_records(sn);
         CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category_id);
 
+        CREATE TABLE IF NOT EXISTS operation_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            op_time     TEXT NOT NULL,
+            op_type     TEXT NOT NULL,
+            sn          TEXT DEFAULT '',
+            detail      TEXT DEFAULT '',
+            operator_ip TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory_checks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            check_time  TEXT NOT NULL,
+            sn          TEXT NOT NULL,
+            found_status TEXT DEFAULT '',
+            notes       TEXT DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_oplogs_time ON operation_logs(op_time);
+        CREATE INDEX IF NOT EXISTS idx_oplogs_type ON operation_logs(op_type);
+        CREATE INDEX IF NOT EXISTS idx_oplogs_sn ON operation_logs(sn);
+        CREATE INDEX IF NOT EXISTS idx_invcheck_time ON inventory_checks(check_time);
+
     """)
     # 兼容旧数据库：category_id 列如果不存在则添加
     try:
@@ -264,6 +286,20 @@ def insert_sample_data():
     db.commit()
     print(f"[示例数据] 已插入 10 个品类、{len(materials)} 个物料、"
           f"{len(outbounds)} 条出库、1 条售后、{len(version_changes)} 条版本变更")
+
+
+def log_operation(op_type, sn='', detail=''):
+    """记录操作日志（审计追溯）"""
+    try:
+        db = get_db()
+        now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+        db.execute(
+            "INSERT INTO operation_logs (op_time, op_type, sn, detail, operator_ip) "
+            "VALUES (?,?,?,?,?)",
+            (now, op_type, sn, detail, request.remote_addr or '')
+        )
+    except Exception:
+        pass  # 日志记录失败不能阻塞主操作
 
 
 # ==========================================================================
@@ -649,6 +685,29 @@ def add_page():
     return render_template('add.html', cats=cats)
 
 
+@app.route('/logs')
+def logs_page():
+    """操作日志页面"""
+    return render_template('logs.html')
+
+
+@app.route('/inventory')
+def inventory_page():
+    """库存盘点页面"""
+    db = get_db()
+    parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
+    categories = []
+    for p in parents:
+        subs = db.execute(
+            "SELECT c.*, COUNT(m.sn) AS total FROM categories c "
+            "LEFT JOIN materials m ON m.category_id = c.id "
+            "WHERE c.parent_id = ? GROUP BY c.id ORDER BY c.id",
+            (p['id'],)
+        ).fetchall()
+        categories.append({'id': p['id'], 'name': p['name'], 'subs': [dict(s) for s in subs]})
+    return render_template('inventory.html', categories=categories)
+
+
 # ==========================================================================
 #                          API：品类管理
 # ==========================================================================
@@ -664,6 +723,7 @@ def api_add_category():
     db.execute("INSERT INTO categories (name, parent_id) VALUES (?,?)",
                (name, parent_id or None))
     db.commit()
+    log_operation('add_category', '', f'添加品类"{name}"')
     return jsonify({'success': True, 'message': f'品类"{name}"已添加'})
 
 
@@ -676,6 +736,7 @@ def api_edit_category(cid):
         return jsonify({'success': False, 'message': '品类名称不能为空'})
     db.execute("UPDATE categories SET name=? WHERE id=?", (name, cid))
     db.commit()
+    log_operation('edit_category', '', f'品类 #{cid} 更名为"{name}"')
     return jsonify({'success': True, 'message': f'品类已更名为"{name}"'})
 
 
@@ -687,6 +748,7 @@ def api_delete_category(cid):
                "(SELECT id FROM categories WHERE id=? OR parent_id=?)", (cid, cid))
     db.execute("DELETE FROM categories WHERE id=? OR parent_id=?", (cid, cid))
     db.commit()
+    log_operation('delete_category', '', f'删除品类 #{cid}')
     return jsonify({'success': True, 'message': '品类已删除，关联物料已取消分类'})
 
 
@@ -730,6 +792,9 @@ def api_add_material():
             cat_id = int(cat_id)
         except (ValueError, TypeError):
             cat_id = None
+        else:
+            if not db.execute("SELECT id FROM categories WHERE id=?", (cat_id,)).fetchone():
+                return jsonify({'success': False, 'message': f'品类 ID {cat_id} 不存在'}), 400
 
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     db.execute(
@@ -741,6 +806,7 @@ def api_add_material():
          data.get('remarks', ''), now, '在库', cat_id)
     )
     db.commit()
+    log_operation('add_material', sn, f'添加物料 {sn}')
     return jsonify({'success': True, 'message': f'物料 {sn} 添加成功'})
 
 
@@ -784,6 +850,8 @@ def api_batch_add():
     msg = f'成功添加 {len(new_sns)} 个物料'
     if exist_sns:
         msg += f'（{len(exist_sns)} 个已存在跳过）'
+    for sn in new_sns:
+        log_operation('add_material', sn, f'批量添加物料 {sn}')
     return jsonify({'success': True, 'message': msg})
 
 
@@ -824,15 +892,18 @@ def api_edit_material(sn):
             cat_id = int(cat_id)
         except (ValueError, TypeError):
             cat_id = None
+        else:
+            if not db.execute("SELECT id FROM categories WHERE id=?", (cat_id,)).fetchone():
+                return jsonify({'success': False, 'message': f'品类 ID {cat_id} 不存在'}), 400
 
+    # 状态只能通过出库/入库/售后/故障等工作流操作变更，不允许直接编辑
     db.execute(
         "UPDATE materials SET hw_version=?, sw_version=?, hw_description=?, "
-        "sw_description=?, remarks=?, status=?, category_id=? WHERE sn=?",
+        "sw_description=?, remarks=?, category_id=? WHERE sn=?",
         (new_hw, new_sw,
          data.get('hw_description', material['hw_description']),
          data.get('sw_description', material['sw_description']),
          data.get('remarks', material['remarks']),
-         data.get('status', material['status']),
          cat_id, sn)
     )
 
@@ -848,6 +919,7 @@ def api_edit_material(sn):
             "old_version, new_version, description) VALUES (?,?,?,?,?,?)",
             (sn, now, '软件', old_sw, new_sw, change_desc or '编辑时变更软件版本'))
     db.commit()
+    log_operation('edit_material', sn, f'编辑物料信息')
     return jsonify({'success': True, 'message': '物料信息更新成功', 'sn': sn})
 
 
@@ -884,6 +956,7 @@ def api_outbound(sn):
          return_courier, return_tracking))
     db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
     db.commit()
+    log_operation('outbound', sn, f'出库（{data.get("purpose", "")}）')
     return jsonify({'success': True, 'message': '出库操作完成'})
 
 
@@ -909,6 +982,7 @@ def api_outbound_edit(record_id):
          data.get('return_courier', ''), data.get('return_tracking', ''),
          record_id))
     db.commit()
+    log_operation('edit_outbound', record['sn'], f'编辑出库记录 #{record_id}')
     return jsonify({'success': True, 'message': '出库记录已更新'})
 
 
@@ -921,13 +995,24 @@ def api_outbound_delete(record_id):
         return jsonify({'success': False, 'message': '出库记录不存在'}), 404
     sn = record['sn']
     db.execute("DELETE FROM outbound_records WHERE id=?", (record_id,))
-    # 如果该物料当前是「已出库」且没有其他出库记录，恢复为「在库」
+    # 如果该物料当前是「已出库」，判断是否需要恢复为「在库」
     mat = db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()
+    restored = False
     if mat and mat['status'] == '已出库':
         remaining = db.execute("SELECT COUNT(*) FROM outbound_records WHERE sn=?", (sn,)).fetchone()[0]
         if remaining == 0:
             db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
+            restored = True
+        else:
+            # 检查被删记录是否是最新的：如果剩余记录都更早，说明已出库状态由被删记录设置
+            latest_remaining = db.execute(
+                "SELECT MAX(outbound_time) FROM outbound_records WHERE sn=?", (sn,)
+            ).fetchone()[0]
+            if not latest_remaining or record['outbound_time'] > latest_remaining:
+                db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
+                restored = True
     db.commit()
+    log_operation('delete_outbound', sn, f'删除出库记录 #{record_id}' + ('，物料恢复在库' if restored else ''))
     return jsonify({'success': True, 'message': '出库记录已删除'})
 
 
@@ -947,6 +1032,7 @@ def api_outbound_return(record_id):
         (data.get('return_sn', ''), data.get('return_courier', ''),
          data.get('return_tracking', ''), record_id))
     db.commit()
+    log_operation('outbound_return', record['sn'], f'标记寄回完成 出库记录 #{record_id}')
     return jsonify({'success': True, 'message': '已标记为寄回完成'})
 
 
@@ -963,6 +1049,7 @@ def api_restock(sn):
         return jsonify({'success': False, 'message': '故障中的物料不能直接入库，请先修复故障'}), 400
     db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
     db.commit()
+    log_operation('restock', sn, '物料重新入库')
     return jsonify({'success': True, 'message': f'{sn} 已重新入库'})
 
 
@@ -986,6 +1073,7 @@ def api_aftersales(sn):
          data.get('problem_description', ''), '处理中'))
     db.execute("UPDATE materials SET status='售后中' WHERE sn=?", (sn,))
     db.commit()
+    log_operation('aftersales_create', sn, '创建售后工单')
     return jsonify({'success': True, 'message': '售后工单已创建'})
 
 
@@ -1004,27 +1092,35 @@ def api_aftersales_complete(record_id):
         "status='已完成', completed_time=?, remarks=? WHERE id=?",
         (data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
          now, data.get('remarks', ''), record_id))
-    # 售后完成：创建出库记录（售后返客户）并设置状态为已出库
-    db.execute(
-        "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-        "courier_company, tracking_number, customer_name, customer_contact, "
-        "customer_company, address, remarks) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (record['sn'], now, '售后返客户', '',
-         data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
-         '', '', '', '', '售后工单 #' + str(record_id) + ' 完成后返还客户'))
-    db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (record['sn'],))
+    # 售后完成：根据 return_to_customer 决定设备去向
+    return_to_customer = data.get('return_to_customer', True)  # 默认返还客户，保持向后兼容
+    if return_to_customer:
+        db.execute(
+            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+            "courier_company, tracking_number, customer_name, customer_contact, "
+            "customer_company, address, remarks) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (record['sn'], now, '售后返客户', '',
+             data.get('send_back_courier', ''), data.get('send_back_tracking', ''),
+             '', '', '', '', '售后工单 #' + str(record_id) + ' 完成后返还客户'))
+        db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (record['sn'],))
+    else:
+        db.execute("UPDATE materials SET status='在库' WHERE sn=?", (record['sn'],))
     db.commit()
-    return jsonify({'success': True, 'message': '售后工单已完成'})
+    msg = '售后工单已完成，物料已出库返还客户' if return_to_customer else '售后工单已完成，物料已回库'
+    log_operation('aftersales_complete', record['sn'], f'售后工单 #{record_id} 完成（{"返还客户" if return_to_customer else "回库"}）')
+    return jsonify({'success': True, 'message': msg})
 
 
 @app.route('/api/fault/<sn>', methods=['POST'])
 def api_fault(sn):
-    """创建故障记录，物料状态切换为故障中"""
+    """创建故障记录。在库/售后中 → 切换为故障中；已出库 → 保持已出库，仅记录故障工单"""
     db = get_db()
     material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
     if not material:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    if material['status'] == '售后中':
+        return jsonify({'success': False, 'message': '售后中的物料不能创建故障记录，请先完成售后'}), 400
     # 检查是否已有故障中的记录
     active = db.execute(
         "SELECT id FROM fault_records WHERE sn=? AND status='故障中'", (sn,)
@@ -1033,13 +1129,17 @@ def api_fault(sn):
         return jsonify({'success': False, 'message': f'该物料已有故障记录 #{active["id"]} 处理中，请先修复后再创建'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    preserve_status = material['status'] == '已出库'  # 已出库设备：记录故障但不改变物料状态
     db.execute(
         "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
         "VALUES (?,?,?,?,?)",
         (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
-    db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
+    if not preserve_status:
+        db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
     db.commit()
-    return jsonify({'success': True, 'message': f'{sn} 已标记为故障中'})
+    msg = f'{sn} 已记录故障工单' if preserve_status else f'{sn} 已标记为故障中'
+    log_operation('fault_create', sn, f'创建故障记录: {data.get("fault_reason", "")}' + ('（已出库设备，状态不变）' if preserve_status else ''))
+    return jsonify({'success': True, 'message': msg})
 
 
 @app.route('/api/fault/resolve/<int:record_id>', methods=['POST'])
@@ -1056,24 +1156,35 @@ def api_fault_resolve(record_id):
     db.execute(
         "UPDATE fault_records SET status='已修复', solution=?, resolved_time=? WHERE id=?",
         (data.get('solution', ''), now, record_id))
-    # 恢复之前的状态
-    prev = record['previous_status'] if record['previous_status'] not in ('故障中',) else '在库'
-    db.execute("UPDATE materials SET status=? WHERE sn=?", (prev, record['sn']))
+    # 恢复之前的状态（仅当物料当前仍是故障中；已出库设备创建故障时状态未变，无需恢复）
+    current = db.execute("SELECT status FROM materials WHERE sn=?", (record['sn'],)).fetchone()
+    if current and current['status'] == '故障中':
+        prev = record['previous_status'] if record['previous_status'] not in ('故障中',) else '在库'
+        db.execute("UPDATE materials SET status=? WHERE sn=?", (prev, record['sn']))
+    else:
+        prev = current['status'] if current else '在库'
     db.commit()
+    log_operation('fault_resolve', record['sn'], f'故障 #{record_id} 已修复，状态恢复为「{prev}」')
     return jsonify({'success': True, 'message': f'{record["sn"]} 故障已修复，状态恢复为「{prev}」'})
 
 
 @app.route('/api/material/delete/<sn>', methods=['POST'])
 def api_delete_material(sn):
     db = get_db()
-    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+    material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+    if not material:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    if material['status'] == '售后中':
+        return jsonify({'success': False, 'message': '售后中的物料不能删除，请先处理售后工单'}), 400
+    if material['status'] == '故障中':
+        return jsonify({'success': False, 'message': '故障中的物料不能删除，请先修复故障'}), 400
     db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
     db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM fault_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM materials WHERE sn=?", (sn,))
     db.commit()
+    log_operation('delete_material', sn, f'删除物料 {sn}')
     return jsonify({'success': True, 'message': f'物料 {sn} 已删除'})
 
 
@@ -1089,6 +1200,18 @@ def api_batch_delete():
     ).fetchall()]
     if not existing:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
+    # 检查状态：售后中/故障中的物料不能删除
+    blocked = []
+    rows = db.execute(
+        "SELECT sn, status FROM materials WHERE sn IN ({})".format(','.join('?' * len(existing))), existing
+    ).fetchall()
+    for r in rows:
+        if r['status'] == '售后中':
+            blocked.append(f'{r["sn"]} 当前为售后中，请先处理售后工单')
+        elif r['status'] == '故障中':
+            blocked.append(f'{r["sn"]} 当前为故障中，请先修复故障')
+    if blocked:
+        return jsonify({'success': False, 'message': '以下物料无法删除：\n' + '\n'.join(blocked)}), 400
     for sn in existing:
         db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
         db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
@@ -1096,6 +1219,8 @@ def api_batch_delete():
         db.execute("DELETE FROM outbound_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM materials WHERE sn IN ({})".format(','.join('?' * len(existing))), existing)
     db.commit()
+    for sn in existing:
+        log_operation('delete_material', sn, f'批量删除物料 {sn}')
     return jsonify({'success': True, 'message': f'已删除 {len(existing)} 个物料'})
 
 
@@ -1310,19 +1435,437 @@ def api_outbound_batch():
     return_courier = data.get('return_courier', '')
     return_tracking = data.get('return_tracking', '')
 
+    try:
+        for sn in sns:
+            db.execute(
+                "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+                "courier_company, tracking_number, customer_name, customer_contact, "
+                "customer_company, address, remarks, return_status, return_sn, "
+                "return_courier, return_tracking) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
+                 company, address, remarks, return_status, return_sn,
+                 return_courier, return_tracking))
+            db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
+        db.commit()
+    except Exception as e:
+        db.execute("ROLLBACK")
+        return jsonify({'success': False, 'message': f'批量出库失败，已回滚：{str(e)}'}), 500
     for sn in sns:
-        db.execute(
-            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-            "courier_company, tracking_number, customer_name, customer_contact, "
-            "customer_company, address, remarks, return_status, return_sn, "
-            "return_courier, return_tracking) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
-             company, address, remarks, return_status, return_sn,
-             return_courier, return_tracking))
-        db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
-    db.commit()
+        log_operation('outbound', sn, f'批量出库（{purpose}）')
     return jsonify({'success': True, 'message': f'已批量出库 {len(sns)} 个物料'})
+
+
+# ==========================================================================
+#                       API：操作日志
+# ==========================================================================
+
+@app.route('/api/operation_logs')
+def api_operation_logs():
+    """查询操作日志，支持分页和筛选"""
+    db = get_db()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    op_type = request.args.get('type', '').strip()
+    sn = request.args.get('sn', '').strip()
+
+    conditions = []
+    params = []
+    if op_type:
+        conditions.append('op_type = ?')
+        params.append(op_type)
+    if sn:
+        conditions.append('sn LIKE ?')
+        params.append(f'%{sn}%')
+
+    where = (' WHERE ' + ' AND '.join(conditions)) if conditions else ''
+    total = db.execute(f"SELECT COUNT(*) FROM operation_logs{where}", params).fetchone()[0]
+
+    offset = (page - 1) * per_page
+    rows = db.execute(
+        f"SELECT * FROM operation_logs{where} ORDER BY op_time DESC LIMIT ? OFFSET ?",
+        params + [per_page, offset]
+    ).fetchall()
+
+    return jsonify({
+        'logs': [dict(r) for r in rows],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': max(1, (total + per_page - 1) // per_page)
+    })
+
+
+# ==========================================================================
+#                       API：数据导出 CSV
+# ==========================================================================
+
+import csv
+import io
+
+
+def _make_csv_response(rows, filename, columns):
+    """生成 CSV 文件响应，带 BOM 兼容 Excel 中文打开"""
+    output = io.StringIO()
+    output.write('﻿')  # UTF-8 BOM
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([row.get(c, '') for c in columns])
+    resp = app.response_class(output.getvalue(), mimetype='text/csv; charset=utf-8')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@app.route('/api/export/materials')
+def api_export_materials():
+    """导出物料清单 CSV"""
+    db = get_db()
+    rows = db.execute("""
+        SELECT m.sn, m.hw_version, m.sw_version, m.hw_description, m.sw_description,
+               m.status, m.inbound_time, m.remarks,
+               c.name AS cat_name, p.name AS parent_name
+        FROM materials m
+        LEFT JOIN categories c ON m.category_id = c.id
+        LEFT JOIN categories p ON c.parent_id = p.id
+        ORDER BY m.inbound_time DESC
+    """).fetchall()
+    cols = ['sn', 'hw_version', 'sw_version', 'hw_description', 'sw_description',
+            'status', 'inbound_time', 'cat_name', 'parent_name', 'remarks']
+    return _make_csv_response(rows, '物料清单.csv', cols)
+
+
+@app.route('/api/export/outbounds')
+def api_export_outbounds():
+    """导出出库记录 CSV"""
+    db = get_db()
+    rows = db.execute("""
+        SELECT o.sn, o.outbound_time, o.purpose, o.purpose_detail,
+               o.courier_company, o.tracking_number, o.customer_name,
+               o.customer_contact, o.customer_company, o.address,
+               o.return_status, o.return_sn, o.remarks
+        FROM outbound_records o ORDER BY o.outbound_time DESC
+    """).fetchall()
+    cols = ['sn', 'outbound_time', 'purpose', 'purpose_detail',
+            'courier_company', 'tracking_number', 'customer_name',
+            'customer_contact', 'customer_company', 'address',
+            'return_status', 'return_sn', 'remarks']
+    return _make_csv_response(rows, '出库记录.csv', cols)
+
+
+@app.route('/api/export/aftersales')
+def api_export_aftersales():
+    """导出售后工单 CSV"""
+    db = get_db()
+    rows = db.execute("""
+        SELECT a.sn, a.created_time, a.problem_description, a.status,
+               a.return_courier, a.return_tracking,
+               a.send_back_courier, a.send_back_tracking,
+               a.completed_time, a.remarks
+        FROM after_sales_records a ORDER BY a.created_time DESC
+    """).fetchall()
+    cols = ['sn', 'created_time', 'problem_description', 'status',
+            'return_courier', 'return_tracking',
+            'send_back_courier', 'send_back_tracking',
+            'completed_time', 'remarks']
+    return _make_csv_response(rows, '售后工单.csv', cols)
+
+
+@app.route('/api/export/faults')
+def api_export_faults():
+    """导出故障记录 CSV"""
+    db = get_db()
+    rows = db.execute("""
+        SELECT f.sn, f.created_time, f.fault_reason, f.solution,
+               f.status, f.previous_status, f.resolved_time
+        FROM fault_records f ORDER BY f.created_time DESC
+    """).fetchall()
+    cols = ['sn', 'created_time', 'fault_reason', 'solution',
+            'status', 'previous_status', 'resolved_time']
+    return _make_csv_response(rows, '故障记录.csv', cols)
+
+
+@app.route('/api/export/operation_logs')
+def api_export_operation_logs():
+    """导出操作日志 CSV"""
+    db = get_db()
+    rows = db.execute("SELECT * FROM operation_logs ORDER BY op_time DESC").fetchall()
+    cols = ['id', 'op_time', 'op_type', 'sn', 'detail', 'operator_ip']
+    return _make_csv_response(rows, '操作日志.csv', cols)
+
+
+# ==========================================================================
+#                       API：客户信息复用
+# ==========================================================================
+
+@app.route('/api/customer_history')
+def api_customer_history():
+    """返回历史客户信息，供出库时下拉选择"""
+    db = get_db()
+    rows = db.execute("""
+        SELECT DISTINCT customer_name, customer_contact, customer_company, address,
+               COUNT(*) AS cnt, MAX(outbound_time) AS last_time
+        FROM outbound_records
+        WHERE customer_name != '' OR customer_company != ''
+        GROUP BY COALESCE(NULLIF(customer_name,''), customer_company)
+        ORDER BY last_time DESC LIMIT 50
+    """).fetchall()
+    return jsonify([{
+        'name': r['customer_name'],
+        'contact': r['customer_contact'],
+        'company': r['customer_company'],
+        'address': r['address'],
+        'count': r['cnt'],
+        'last_time': r['last_time']
+    } for r in rows])
+
+
+# ==========================================================================
+#                       API：库存盘点
+# ==========================================================================
+
+@app.route('/api/inventory/check_records')
+def api_check_records():
+    """查询盘点记录"""
+    db = get_db()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    total = db.execute("SELECT COUNT(*) FROM inventory_checks").fetchone()[0]
+    offset = (page - 1) * per_page
+    rows = db.execute(
+        "SELECT * FROM inventory_checks ORDER BY check_time DESC LIMIT ? OFFSET ?",
+        (per_page, offset)
+    ).fetchall()
+    return jsonify({
+        'checks': [dict(r) for r in rows],
+        'total': total,
+        'page': page,
+        'total_pages': max(1, (total + per_page - 1) // per_page)
+    })
+
+
+@app.route('/api/inventory/check', methods=['POST'])
+def api_inventory_check():
+    """执行盘点：标记物料在库/不在库"""
+    db = get_db()
+    data = request.get_json(force=True)
+    sns = data.get('sns', [])
+    notes = data.get('notes', '')
+    if not sns:
+        return jsonify({'success': False, 'message': '请选择至少一个物料'}), 400
+
+    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    mismatch = []
+    checked = 0
+    for sn in sns:
+        mat = db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()
+        found_status = mat['status'] if mat else '不存在'
+        if not mat:
+            mismatch.append(f'{sn} — 系统中不存在')
+        elif mat['status'] != '在库':
+            mismatch.append(f'{sn} — 状态为「{mat["status"]}」，非"在库"')
+        db.execute(
+            "INSERT INTO inventory_checks (check_time, sn, found_status, notes) VALUES (?,?,?,?)",
+            (now, sn, found_status, notes)
+        )
+        checked += 1
+    db.commit()
+
+    msg = f'已盘点 {checked} 个物料'
+    if mismatch:
+        msg += f'（{len(mismatch)} 个异常：\n' + '\n'.join(mismatch) + '）'
+    log_operation('inventory_check', '', f'盘点 {checked} 个物料' + (f'，{len(mismatch)} 个异常' if mismatch else ''))
+    return jsonify({'success': True, 'message': msg, 'mismatch': mismatch})
+
+
+@app.route('/api/inventory/stats')
+def api_inventory_stats():
+    """库存盘点统计（按品类汇总）"""
+    db = get_db()
+    parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
+    result = []
+    for p in parents:
+        subs = db.execute("""
+            SELECT c.*,
+                COUNT(m.sn) AS total,
+                SUM(CASE WHEN m.status='在库' THEN 1 ELSE 0 END) AS in_stock,
+                SUM(CASE WHEN m.status='已出库' THEN 1 ELSE 0 END) AS outbound,
+                SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales,
+                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault
+            FROM categories c
+            LEFT JOIN materials m ON m.category_id = c.id
+            WHERE c.parent_id = ?
+            GROUP BY c.id ORDER BY c.id
+        """, (p['id'],)).fetchall()
+        result.append({
+            'name': p['name'],
+            'subs': [{
+                'name': s['name'],
+                'total': s['total'] or 0,
+                'in_stock': s['in_stock'] or 0,
+                'outbound': s['outbound'] or 0,
+                'after_sales': s['after_sales'] or 0,
+                'fault': s['fault'] or 0,
+            } for s in subs]
+        })
+    # 总计
+    totals = db.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status='在库' THEN 1 ELSE 0 END) AS in_stock,
+            SUM(CASE WHEN status='已出库' THEN 1 ELSE 0 END) AS outbound,
+            SUM(CASE WHEN status='售后中' THEN 1 ELSE 0 END) AS after_sales,
+            SUM(CASE WHEN status='故障中' THEN 1 ELSE 0 END) AS fault
+        FROM materials
+    """).fetchone()
+    return jsonify({
+        'categories': result,
+        'totals': dict(totals),
+        'orphan': db.execute("SELECT COUNT(*) FROM materials WHERE category_id IS NULL").fetchone()[0]
+    })
+
+
+# ==========================================================================
+#                       API：物料状态时间线
+# ==========================================================================
+
+@app.route('/api/timeline/<sn>')
+def api_timeline(sn):
+    """返回物料状态时间线（合并出库、售后、故障、版本变更、操作日志）"""
+    db = get_db()
+    material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+    if not material:
+        return jsonify({'success': False, 'message': '物料不存在'}), 404
+
+    events = []
+
+    # 入库事件
+    events.append({
+        'time': material['inbound_time'],
+        'type': 'inbound',
+        'label': '入库',
+        'detail': f"SN: {material['sn']}，硬件: {material['hw_version']}，软件: {material['sw_version']}"
+    })
+
+    # 出库记录
+    for r in db.execute(
+        "SELECT * FROM outbound_records WHERE sn=? ORDER BY outbound_time", (sn,)
+    ).fetchall():
+        events.append({
+            'time': r['outbound_time'],
+            'type': 'outbound',
+            'label': f"出库（{r['purpose'] or '未指定'}）",
+            'detail': f"{r['customer_name']} {r['customer_company']} {r.get('courier_company','')} {r.get('tracking_number','')}".strip()
+        })
+
+    # 售后记录
+    for r in db.execute(
+        "SELECT * FROM after_sales_records WHERE sn=? ORDER BY created_time", (sn,)
+    ).fetchall():
+        events.append({
+            'time': r['created_time'],
+            'type': 'aftersales',
+            'label': '创建售后工单',
+            'detail': f"#{r['id']} — {r['problem_description']}"
+        })
+        if r.get('completed_time'):
+            events.append({
+                'time': r['completed_time'],
+                'type': 'aftersales_done',
+                'label': '售后完成',
+                'detail': f"#{r['id']} — {r.get('remarks', '')}"
+            })
+
+    # 故障记录
+    for r in db.execute(
+        "SELECT * FROM fault_records WHERE sn=? ORDER BY created_time", (sn,)
+    ).fetchall():
+        events.append({
+            'time': r['created_time'],
+            'type': 'fault',
+            'label': '故障记录',
+            'detail': f"#{r['id']} — {r['fault_reason']}"
+        })
+        if r.get('resolved_time'):
+            events.append({
+                'time': r['resolved_time'],
+                'type': 'fault_resolved',
+                'label': '故障修复',
+                'detail': f"#{r['id']} — {r.get('solution', '')}"
+            })
+
+    # 版本变更
+    for r in db.execute(
+        "SELECT * FROM version_changes WHERE sn=? ORDER BY change_time", (sn,)
+    ).fetchall():
+        events.append({
+            'time': r['change_time'],
+            'type': 'version_change',
+            'label': f"版本变更（{r['change_type']}）",
+            'detail': f"{r['old_version']} → {r['new_version']} — {r['description']}"
+        })
+
+    # 操作日志
+    for r in db.execute(
+        "SELECT * FROM operation_logs WHERE sn=? ORDER BY op_time", (sn,)
+    ).fetchall():
+        events.append({
+            'time': r['op_time'],
+            'type': 'log',
+            'label': r['op_type'],
+            'detail': r['detail']
+        })
+
+    events.sort(key=lambda e: e['time'])
+    return jsonify({'sn': sn, 'events': events, 'current_status': material['status']})
+
+
+# ==========================================================================
+#                       API：仪表板汇总统计
+# ==========================================================================
+
+@app.route('/api/dashboard/stats')
+def api_dashboard_stats():
+    """仪表板统计数据（供 Chart.js 使用）"""
+    db = get_db()
+    # 各状态数量
+    status_counts = db.execute("""
+        SELECT status, COUNT(*) AS cnt FROM materials GROUP BY status
+    """).fetchall()
+    status_map = {r['status']: r['cnt'] for r in status_counts}
+
+    # 每月入库趋势（最近12个月）
+    month_in = db.execute("""
+        SELECT substr(inbound_time, 1, 7) AS m, COUNT(*) AS cnt
+        FROM materials GROUP BY m ORDER BY m DESC LIMIT 12
+    """).fetchall()
+
+    # 每月出库趋势
+    month_out = db.execute("""
+        SELECT substr(outbound_time, 1, 7) AS m, COUNT(*) AS cnt
+        FROM outbound_records GROUP BY m ORDER BY m DESC LIMIT 12
+    """).fetchall()
+
+    # 品类分布 Top 10
+    top_cats = db.execute("""
+        SELECT c.name, COUNT(m.sn) AS cnt
+        FROM materials m JOIN categories c ON m.category_id = c.id
+        GROUP BY c.id ORDER BY cnt DESC LIMIT 10
+    """).fetchall()
+
+    # 出库用途分布
+    purpose_dist = db.execute("""
+        SELECT purpose, COUNT(*) AS cnt FROM outbound_records
+        WHERE purpose != '' GROUP BY purpose ORDER BY cnt DESC
+    """).fetchall()
+
+    return jsonify({
+        'status_counts': {r['status']: r['cnt'] for r in status_counts},
+        'month_in': [{'month': r['m'], 'count': r['cnt']} for r in month_in],
+        'month_out': [{'month': r['m'], 'count': r['cnt']} for r in month_out],
+        'top_categories': [{'name': r['name'], 'count': r['cnt']} for r in top_cats],
+        'purpose_dist': [{'purpose': r['purpose'], 'count': r['cnt']} for r in purpose_dist],
+    })
 
 
 # ==========================================================================
