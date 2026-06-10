@@ -1910,6 +1910,33 @@ def api_db_download():
                      as_attachment=True, download_name='material.db')
 
 
+@app.route('/api/db/upload', methods=['POST'])
+def api_db_upload():
+    """上传完整数据库文件（用于数据恢复/迁移）"""
+    token = request.form.get('token', '')
+    if token != SYNC_TOKEN:
+        return jsonify({'success': False, 'error': 'unauthorized'}), 403
+    file = request.files.get('db')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'error': '未选择文件'}), 400
+    # 备份旧数据库
+    import shutil as _shutil
+    bak = DATABASE + '.pre_upload.bak'
+    _shutil.copy2(DATABASE, bak)
+    # 写入新数据库
+    file.save(DATABASE)
+    # 校验新数据库可读
+    try:
+        test = sqlite3.connect(DATABASE)
+        cnt = test.execute("SELECT COUNT(*) FROM materials").fetchone()[0]
+        test.close()
+        return jsonify({'success': True, 'message': f'数据库已上传，物料 {cnt} 条'})
+    except Exception as e:
+        # 恢复旧数据库
+        _shutil.copy2(bak, DATABASE)
+        return jsonify({'success': False, 'error': f'数据库校验失败，已回滚: {str(e)}'}), 400
+
+
 def auto_sync_from_cloud():
     """本地启动时自动双向同步，失败不阻塞启动"""
     import subprocess
