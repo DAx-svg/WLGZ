@@ -291,14 +291,17 @@ def index():
             exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
             if exact:
                 return redirect(url_for('detail', sn=search))
-        # 多关键词 AND 搜索（每个关键词需匹配 SN 或备注）
+        # 多关键词 AND 搜索（匹配 SN、备注、出库联系人/公司）
         conditions = []
         params = []
         for kw in keywords:
             p = f'%{kw}%'
-            conditions.append('(sn LIKE ? OR remarks LIKE ?)')
-            params.extend([p, p])
-        sql = 'SELECT * FROM materials WHERE ' + ' AND '.join(conditions) + ' ORDER BY inbound_time DESC'
+            conditions.append(
+                '(m.sn LIKE ? OR m.remarks LIKE ? OR '
+                'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? OR customer_company LIKE ?))')
+            params.extend([p, p, p, p])
+        sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
+               + ' AND '.join(conditions) + ' ORDER BY m.inbound_time DESC')
         materials = db.execute(sql, params).fetchall()
     elif filter_status:
         materials = db.execute(
