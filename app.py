@@ -298,8 +298,10 @@ def log_operation(op_type, sn='', detail=''):
             "VALUES (?,?,?,?,?)",
             (now, op_type, sn, detail, request.remote_addr or '')
         )
-    except Exception:
-        pass  # 日志记录失败不能阻塞主操作
+        db.commit()
+    except Exception as e:
+        import sys
+        print(f'[log_operation] 日志记录失败: {e}', file=sys.stderr)
 
 
 # ==========================================================================
@@ -1502,6 +1504,7 @@ def api_operation_logs():
 
 import csv
 import io
+from urllib.parse import quote
 
 
 def _make_csv_response(rows, filename, columns):
@@ -1511,9 +1514,12 @@ def _make_csv_response(rows, filename, columns):
     writer = csv.writer(output)
     writer.writerow(columns)
     for row in rows:
-        writer.writerow([row.get(c, '') for c in columns])
+        if isinstance(row, dict):
+            writer.writerow([row.get(c, '') for c in columns])
+        else:
+            writer.writerow([row[c] if c in row.keys() else '' for c in columns])
     resp = app.response_class(output.getvalue(), mimetype='text/csv; charset=utf-8')
-    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
     return resp
 
 
@@ -1755,7 +1761,7 @@ def api_timeline(sn):
             'time': r['outbound_time'],
             'type': 'outbound',
             'label': f"出库（{r['purpose'] or '未指定'}）",
-            'detail': f"{r['customer_name']} {r['customer_company']} {r.get('courier_company','')} {r.get('tracking_number','')}".strip()
+            'detail': f"{r['customer_name']} {r['customer_company']} {r['courier_company'] or ''} {r['tracking_number'] or ''}".strip()
         })
 
     # 售后记录
@@ -1768,12 +1774,12 @@ def api_timeline(sn):
             'label': '创建售后工单',
             'detail': f"#{r['id']} — {r['problem_description']}"
         })
-        if r.get('completed_time'):
+        if r['completed_time']:
             events.append({
                 'time': r['completed_time'],
                 'type': 'aftersales_done',
                 'label': '售后完成',
-                'detail': f"#{r['id']} — {r.get('remarks', '')}"
+                'detail': f"#{r['id']} — {r['remarks'] or ''}"
             })
 
     # 故障记录
@@ -1786,12 +1792,12 @@ def api_timeline(sn):
             'label': '故障记录',
             'detail': f"#{r['id']} — {r['fault_reason']}"
         })
-        if r.get('resolved_time'):
+        if r['resolved_time']:
             events.append({
                 'time': r['resolved_time'],
                 'type': 'fault_resolved',
                 'label': '故障修复',
-                'detail': f"#{r['id']} — {r.get('solution', '')}"
+                'detail': f"#{r['id']} — {r['solution'] or ''}"
             })
 
     # 版本变更
