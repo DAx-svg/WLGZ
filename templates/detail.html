@@ -41,8 +41,22 @@
                     <i class="bi bi-tools"></i> 售后
                 </button>
                 <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
-                    onclick="document.getElementById('resolveFaultId').value={{ active_fault_id }}">
+                    onclick="document.getElementById('resolveFaultId').value={{ active_fault_id }};document.getElementById('resolveReturnFields').style.display='none'">
                     <i class="bi bi-check-lg"></i> 修复完成
+                </button>
+                {% elif material.status == '寄修中' %}
+                <button class="btn btn-warning btn-sm me-2" disabled title="寄修中的物料不能出库">
+                    <i class="bi bi-truck"></i> 出库
+                </button>
+                <button class="btn btn-success btn-sm me-2" id="btnRestock" disabled title="寄修中的物料不能直接入库，请先修复故障">
+                    <i class="bi bi-box-arrow-in-down"></i> 在库
+                </button>
+                <button class="btn btn-danger btn-sm me-2" disabled title="寄修中的物料不能创建售后，请先修复故障">
+                    <i class="bi bi-tools"></i> 售后
+                </button>
+                <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
+                    onclick="document.getElementById('resolveFaultId').value={{ active_fault_id }};document.getElementById('resolveReturnFields').style.display=''">
+                    <i class="bi bi-check-lg"></i> 修复完成（寄回）
                 </button>
                 {% elif material.status == '售后中' %}
                 <button class="btn btn-warning btn-sm me-2" disabled title="售后中的物料不能出库">
@@ -112,6 +126,7 @@
                         {% elif material.status == '已出库' %}<span class="badge bg-warning text-dark">{{ material.status }}</span>
                         {% elif material.status == '售后中' %}<span class="badge bg-danger">{{ material.status }}</span>
                         {% elif material.status == '故障中' %}<span class="badge bg-warning text-dark">{{ material.status }}</span>
+                        {% elif material.status == '寄修中' %}<span class="badge bg-info text-dark">{{ material.status }}</span>
                         {% else %}<span class="badge bg-secondary">{{ material.status }}</span>{% endif %}
                     </div>
                 </div>
@@ -230,14 +245,23 @@
                 <hr>
                 <div class="row g-2">
                     <div class="col-12"><span class="info-label">故障原因：</span>{{ f.fault_reason or '无' }}</div>
+                    {% if f.repair_type == '寄修' %}
+                    <div class="col-md-4"><span class="info-label">维修方式：</span>寄修 → {{ f.supplier or '-' }}</div>
+                    {% if f.return_courier %}<div class="col-md-4"><span class="info-label">寄回快递：</span>{{ f.return_courier }} {{ f.return_tracking }}</div>{% endif %}
+                    {% endif %}
                     {% if f.solution %}<div class="col-12"><span class="info-label">解决方案：</span>{{ f.solution }}</div>{% endif %}
                     {% if f.resolved_time %}<div class="col-md-4"><span class="info-label">修复时间：</span>{{ f.resolved_time }}</div>{% endif %}
                     {% if f.previous_status %}<div class="col-md-4"><span class="info-label">恢复状态：</span>{{ f.previous_status }}</div>{% endif %}
                 </div>
                 {% if f.status == '故障中' %}
                 <button class="btn btn-warning btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
-                    onclick="document.getElementById('resolveFaultId').value={{ f.id }}">
+                    onclick="document.getElementById('resolveFaultId').value={{ f.id }};document.getElementById('resolveReturnFields').style.display='none'">
                     <i class="bi bi-check-lg"></i> 修复完成
+                </button>
+                {% elif f.status == '寄修中' %}
+                <button class="btn btn-warning btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#resolveFaultModal"
+                    onclick="document.getElementById('resolveFaultId').value={{ f.id }};document.getElementById('resolveReturnFields').style.display=''">
+                    <i class="bi bi-check-lg"></i> 修复完成（寄回）
                 </button>
                 {% endif %}
             </div></div>
@@ -456,6 +480,20 @@
 <form id="faultForm"><div class="modal-body">
     <div class="mb-2"><label class="form-label">故障原因 <span class="text-danger">*</span></label>
         <textarea class="form-control" id="faultReason" rows="3" required placeholder="请描述故障现象和原因"></textarea></div>
+    <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="faultNeedRepair" onchange="document.getElementById('faultRepairFields').style.display=this.checked?'':'none'">
+        <label class="form-check-label fw-bold" for="faultNeedRepair">需要寄修</label>
+    </div>
+    <div id="faultRepairFields" style="display:none;">
+        <div class="mb-2"><label class="form-label">供应商名称 <span class="text-danger">*</span></label>
+            <input class="form-control" id="faultSupplier" placeholder="寄修供应商名称"></div>
+        <div class="row g-2">
+            <div class="col-6"><label class="form-label">快递公司 <span class="text-danger">*</span></label>
+                <input class="form-control" id="faultCourier"></div>
+            <div class="col-6"><label class="form-label">快递单号 <span class="text-danger">*</span></label>
+                <input class="form-control" id="faultTracking"></div>
+        </div>
+    </div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-warning" id="faultBtn" type="submit">标记故障</button></div>
 </form></div></div></div>
 
@@ -465,6 +503,15 @@
 <form id="resolveFaultForm"><input type="hidden" id="resolveFaultId"><div class="modal-body">
     <div class="mb-2"><label class="form-label">解决方案 <span class="text-danger">*</span></label>
         <textarea class="form-control" id="faultSolution" rows="3" required placeholder="请描述故障解决方案"></textarea></div>
+    <div id="resolveReturnFields" style="display:none;">
+        <hr>
+        <div class="row g-2">
+            <div class="col-6"><label class="form-label">寄回快递公司 <span class="text-danger">*</span></label>
+                <input class="form-control" id="faultReturnCourier"></div>
+            <div class="col-6"><label class="form-label">寄回快递单号 <span class="text-danger">*</span></label>
+                <input class="form-control" id="faultReturnTracking"></div>
+        </div>
+    </div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" id="resolveFaultBtn" type="submit">确认修复</button></div>
 </form></div></div></div>
 
@@ -827,11 +874,26 @@ document.getElementById('obEditReturnStatus').addEventListener('change',function
 // 故障
 document.getElementById('faultForm').addEventListener('submit',function(e){e.preventDefault();
     if(!document.getElementById('faultReason').value.trim()){st('请填写故障原因',false);return;}
-    post('/api/fault/'+SN,{fault_reason:document.getElementById('faultReason').value},'faultModal',document.getElementById('faultBtn'));});
+    var needRepair=document.getElementById('faultNeedRepair').checked;
+    var payload={fault_reason:document.getElementById('faultReason').value};
+    if(needRepair){
+        payload.repair_type='寄修';
+        payload.supplier=document.getElementById('faultSupplier').value.trim();
+        payload.courier_company=document.getElementById('faultCourier').value.trim();
+        payload.tracking_number=document.getElementById('faultTracking').value.trim();
+        if(!payload.supplier||!payload.courier_company||!payload.tracking_number){st('寄修时供应商、快递公司和快递单号为必填',false);return;}
+    }
+    post('/api/fault/'+SN,payload,'faultModal',document.getElementById('faultBtn'));});
 // 修复故障
 document.getElementById('resolveFaultForm').addEventListener('submit',function(e){e.preventDefault();
     if(!document.getElementById('faultSolution').value.trim()){st('请填写解决方案',false);return;}
-    post('/api/fault/resolve/'+document.getElementById('resolveFaultId').value,{solution:document.getElementById('faultSolution').value},'resolveFaultModal',document.getElementById('resolveFaultBtn'));});
+    var payload={solution:document.getElementById('faultSolution').value};
+    var retFields=document.getElementById('resolveReturnFields');
+    if(retFields.style.display!=='none'){
+        payload.return_courier=document.getElementById('faultReturnCourier').value.trim();
+        payload.return_tracking=document.getElementById('faultReturnTracking').value.trim();
+    }
+    post('/api/fault/resolve/'+document.getElementById('resolveFaultId').value,payload,'resolveFaultModal',document.getElementById('resolveFaultBtn'));});
 
 function esc(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 

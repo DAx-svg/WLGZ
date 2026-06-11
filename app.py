@@ -186,6 +186,13 @@ def init_db():
             db.execute(f"ALTER TABLE outbound_records ADD COLUMN {col} TEXT DEFAULT {default}")
         except sqlite3.OperationalError:
             pass
+    # v2.4: 故障寄修出库
+    for col, default in [('repair_type', "'本地维修'"), ('supplier', "''"),
+                         ('return_courier', "''"), ('return_tracking', "''")]:
+        try:
+            db.execute(f"ALTER TABLE fault_records ADD COLUMN {col} TEXT DEFAULT {default}")
+        except sqlite3.OperationalError:
+            pass
     db.commit()
 
 
@@ -341,11 +348,6 @@ def index():
         sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
                + ' AND '.join(conditions) + ' ORDER BY m.inbound_time DESC')
         materials = db.execute(sql, params).fetchall()
-    elif filter_status:
-        materials = db.execute(
-            "SELECT * FROM materials WHERE status = ? ORDER BY inbound_time DESC",
-            (filter_status,)
-        ).fetchall()
     elif filter_return:
         # 筛选有待寄回出库记录的物料
         materials = db.execute(
@@ -353,22 +355,6 @@ def index():
             "JOIN outbound_records o ON m.sn = o.sn "
             "WHERE o.return_status = '待寄回' "
             "ORDER BY m.inbound_time DESC"
-        ).fetchall()
-    elif sub_cat_id:
-        materials = db.execute(
-            "SELECT * FROM materials WHERE category_id = ? ORDER BY inbound_time DESC",
-            (sub_cat_id,)
-        ).fetchall()
-    elif parent_id:
-        materials = db.execute(
-            "SELECT m.* FROM materials m "
-            "JOIN categories c ON m.category_id = c.id "
-            "WHERE c.parent_id = ? ORDER BY m.inbound_time DESC",
-            (parent_id,)
-        ).fetchall()
-    elif show_orphan:
-        materials = db.execute(
-            "SELECT * FROM materials WHERE category_id IS NULL ORDER BY inbound_time DESC"
         ).fetchall()
     elif show_month_in:
         materials = db.execute(
@@ -383,9 +369,30 @@ def index():
             (f'{this_month}%',)
         ).fetchall()
     else:
-        materials = db.execute(
-            "SELECT * FROM materials ORDER BY inbound_time DESC"
-        ).fetchall()
+        # 组合筛选：status + category/parent/orphan 可自由组合
+        conditions = []
+        params = []
+        if filter_status:
+            conditions.append('status = ?')
+            params.append(filter_status)
+        if sub_cat_id:
+            conditions.append('category_id = ?')
+            params.append(sub_cat_id)
+        elif parent_id:
+            conditions.append('category_id IN (SELECT id FROM categories WHERE parent_id = ?)')
+            params.append(parent_id)
+        elif show_orphan:
+            conditions.append('category_id IS NULL')
+        if conditions:
+            where_clause = ' WHERE ' + ' AND '.join(conditions)
+            materials = db.execute(
+                f"SELECT * FROM materials{where_clause} ORDER BY inbound_time DESC",
+                params
+            ).fetchall()
+        else:
+            materials = db.execute(
+                "SELECT * FROM materials ORDER BY inbound_time DESC"
+            ).fetchall()
 
     # 批量查询每个物料的最新出库用途
     if materials:
@@ -432,7 +439,8 @@ def index():
                 SUM(CASE WHEN m.status='在库' THEN 1 ELSE 0 END) AS in_stock,
                 SUM(CASE WHEN m.status='已出库' THEN 1 ELSE 0 END) AS outbound,
                 SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales,
-                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault
+                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault,
+                SUM(CASE WHEN m.status='寄修中' THEN 1 ELSE 0 END) AS repair
             FROM categories c
             LEFT JOIN materials m ON m.category_id = c.id
             WHERE c.parent_id = ?
@@ -459,6 +467,7 @@ def index():
                 'outbound': s['outbound'] or 0,
                 'after_sales': s['after_sales'] or 0,
                 'fault': s['fault'] or 0,
+                'repair': s['repair'] or 0,
                 'sns': sns_for_subs.get(s['id'], [])
             } for s in subs]
         })
@@ -485,6 +494,9 @@ def index():
         ).fetchone()['cnt'],
         'fault': db.execute(
             "SELECT COUNT(*) AS cnt FROM materials WHERE status='故障中'"
+        ).fetchone()['cnt'],
+        'repair': db.execute(
+            "SELECT COUNT(*) AS cnt FROM materials WHERE status='寄修中'"
         ).fetchone()['cnt'],
     }
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
@@ -638,9 +650,9 @@ def detail(sn):
         db.commit()
     active_as_id = active[0]['id'] if active else 0
 
-    # 查找活跃的故障记录 ID，清理多余活跃记录
+    # 查找活跃的故障记录 ID（含寄修中），清理多余活跃记录
     active_fault = db.execute(
-        "SELECT id FROM fault_records WHERE sn=? AND status='故障中' ORDER BY created_time DESC",
+        "SELECT id, repair_type FROM fault_records WHERE sn=? AND status IN ('故障中','寄修中') ORDER BY created_time DESC",
         (sn,)
     ).fetchall()
     if len(active_fault) > 1:
@@ -649,6 +661,7 @@ def detail(sn):
                        (datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S'), f['id']))
         db.commit()
     active_fault_id = active_fault[0]['id'] if active_fault else 0
+    active_fault_repair_type = active_fault[0]['repair_type'] if active_fault else ''
 
     return render_template('detail.html',
                            material=material,
@@ -658,7 +671,8 @@ def detail(sn):
                            version_changes=version_changes,
                            cats=cats,
                            active_as_id=active_as_id,
-                           active_fault_id=active_fault_id)
+                           active_fault_id=active_fault_id,
+                           active_fault_repair_type=active_fault_repair_type)
 
 
 @app.route('/outbounds')
@@ -937,6 +951,8 @@ def api_outbound(sn):
         return jsonify({'success': False, 'message': '售后中的物料不能出库'}), 400
     if mat['status'] == '故障中':
         return jsonify({'success': False, 'message': '故障中的物料不能出库'}), 400
+    if mat['status'] == '寄修中':
+        return jsonify({'success': False, 'message': '寄修中的物料不能出库'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
     # 寄回追踪（仅售后出库时有效）
@@ -1049,6 +1065,8 @@ def api_restock(sn):
         return jsonify({'success': False, 'message': '售后中的物料不能直接入库，请先完成售后'}), 400
     if material['status'] == '故障中':
         return jsonify({'success': False, 'message': '故障中的物料不能直接入库，请先修复故障'}), 400
+    if material['status'] == '寄修中':
+        return jsonify({'success': False, 'message': '寄修中的物料不能直接入库，请先修复故障'}), 400
     db.execute("UPDATE materials SET status='在库' WHERE sn=?", (sn,))
     db.commit()
     log_operation('restock', sn, '物料重新入库')
@@ -1116,37 +1134,69 @@ def api_aftersales_complete(record_id):
 
 @app.route('/api/fault/<sn>', methods=['POST'])
 def api_fault(sn):
-    """创建故障记录。在库/售后中 → 切换为故障中；已出库 → 保持已出库，仅记录故障工单"""
+    """创建故障记录。支持本地维修和寄修两种模式"""
     db = get_db()
     material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
     if not material:
         return jsonify({'success': False, 'message': '物料不存在'}), 404
     if material['status'] == '售后中':
         return jsonify({'success': False, 'message': '售后中的物料不能创建故障记录，请先完成售后'}), 400
+    if material['status'] == '寄修中':
+        return jsonify({'success': False, 'message': '该物料已在寄修中，请先完成修复'}), 400
     # 检查是否已有故障中的记录
     active = db.execute(
-        "SELECT id FROM fault_records WHERE sn=? AND status='故障中'", (sn,)
+        "SELECT id FROM fault_records WHERE sn=? AND status IN ('故障中','寄修中')", (sn,)
     ).fetchone()
     if active:
         return jsonify({'success': False, 'message': f'该物料已有故障记录 #{active["id"]} 处理中，请先修复后再创建'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+    repair_type = data.get('repair_type', '本地维修')
     preserve_status = material['status'] == '已出库'  # 已出库设备：记录故障但不改变物料状态
-    db.execute(
-        "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
-        "VALUES (?,?,?,?,?)",
-        (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
-    if not preserve_status:
-        db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
-    db.commit()
-    msg = f'{sn} 已记录故障工单' if preserve_status else f'{sn} 已标记为故障中'
-    log_operation('fault_create', sn, f'创建故障记录: {data.get("fault_reason", "")}' + ('（已出库设备，状态不变）' if preserve_status else ''))
-    return jsonify({'success': True, 'message': msg})
+
+    if repair_type == '寄修':
+        # 寄修：验证必填字段
+        supplier = data.get('supplier', '').strip()
+        courier_company = data.get('courier_company', '').strip()
+        tracking_number = data.get('tracking_number', '').strip()
+        if not supplier or not courier_company or not tracking_number:
+            return jsonify({'success': False, 'message': '寄修时供应商、快递公司和快递单号为必填'}), 400
+        if preserve_status:
+            return jsonify({'success': False, 'message': '已出库设备不能寄修，请先重新入库'}), 400
+        # 创建故障记录
+        db.execute(
+            "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status, repair_type, supplier) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (sn, now, data.get('fault_reason', ''), '寄修中', material['status'], '寄修', supplier))
+        # 创建出库记录（寄修出库）
+        db.execute(
+            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+            "courier_company, tracking_number, customer_name, customer_company, remarks) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (sn, now, '寄修出库', f'寄修至 {supplier}', courier_company, tracking_number,
+             supplier, '', data.get('fault_reason', '')))
+        # 更新物料状态
+        db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
+        db.commit()
+        log_operation('fault_create', sn, f'创建寄修故障记录: {data.get("fault_reason", "")}，寄修至 {supplier}')
+        return jsonify({'success': True, 'message': f'{sn} 已标记为寄修中，寄修出库至 {supplier}'})
+    else:
+        # 本地维修：保持现有逻辑
+        db.execute(
+            "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
+            "VALUES (?,?,?,?,?)",
+            (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
+        if not preserve_status:
+            db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
+        db.commit()
+        msg = f'{sn} 已记录故障工单' if preserve_status else f'{sn} 已标记为故障中'
+        log_operation('fault_create', sn, f'创建故障记录: {data.get("fault_reason", "")}' + ('（已出库设备，状态不变）' if preserve_status else ''))
+        return jsonify({'success': True, 'message': msg})
 
 
 @app.route('/api/fault/resolve/<int:record_id>', methods=['POST'])
 def api_fault_resolve(record_id):
-    """修复故障，恢复之前的状态"""
+    """修复故障，恢复之前的状态。寄修故障支持登记寄回快递信息"""
     db = get_db()
     record = db.execute("SELECT * FROM fault_records WHERE id=?", (record_id,)).fetchone()
     if not record:
@@ -1155,18 +1205,34 @@ def api_fault_resolve(record_id):
         return jsonify({'success': False, 'message': '已修复，无需重复操作'}), 400
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
-    db.execute(
-        "UPDATE fault_records SET status='已修复', solution=?, resolved_time=? WHERE id=?",
-        (data.get('solution', ''), now, record_id))
-    # 恢复之前的状态（仅当物料当前仍是故障中；已出库设备创建故障时状态未变，无需恢复）
-    current = db.execute("SELECT status FROM materials WHERE sn=?", (record['sn'],)).fetchone()
-    if current and current['status'] == '故障中':
-        prev = record['previous_status'] if record['previous_status'] not in ('故障中',) else '在库'
+
+    is_repair = record['repair_type'] == '寄修'
+    if is_repair:
+        return_courier = data.get('return_courier', '').strip()
+        return_tracking = data.get('return_tracking', '').strip()
+        db.execute(
+            "UPDATE fault_records SET status='已修复', solution=?, resolved_time=?, "
+            "return_courier=?, return_tracking=? WHERE id=?",
+            (data.get('solution', ''), now, return_courier, return_tracking, record_id))
+        # 寄修修复：恢复之前的状态（通常是恢复为在库）
+        prev = record['previous_status'] if record['previous_status'] not in ('寄修中',) else '在库'
         db.execute("UPDATE materials SET status=? WHERE sn=?", (prev, record['sn']))
+        db.commit()
+        log_operation('fault_resolve', record['sn'], f'寄修故障 #{record_id} 已修复，状态恢复为「{prev}」')
+        return jsonify({'success': True, 'message': f'{record["sn"]} 寄修故障已修复，物料已回库，状态恢复为「{prev}」'})
     else:
-        prev = current['status'] if current else '在库'
-    db.commit()
-    log_operation('fault_resolve', record['sn'], f'故障 #{record_id} 已修复，状态恢复为「{prev}」')
+        db.execute(
+            "UPDATE fault_records SET status='已修复', solution=?, resolved_time=? WHERE id=?",
+            (data.get('solution', ''), now, record_id))
+        # 恢复之前的状态（仅当物料当前仍是故障中；已出库设备创建故障时状态未变，无需恢复）
+        current = db.execute("SELECT status FROM materials WHERE sn=?", (record['sn'],)).fetchone()
+        if current and current['status'] == '故障中':
+            prev = record['previous_status'] if record['previous_status'] not in ('故障中',) else '在库'
+            db.execute("UPDATE materials SET status=? WHERE sn=?", (prev, record['sn']))
+        else:
+            prev = current['status'] if current else '在库'
+        db.commit()
+        log_operation('fault_resolve', record['sn'], f'故障 #{record_id} 已修复，状态恢复为「{prev}」')
     return jsonify({'success': True, 'message': f'{record["sn"]} 故障已修复，状态恢复为「{prev}」'})
 
 
@@ -1180,6 +1246,8 @@ def api_delete_material(sn):
         return jsonify({'success': False, 'message': '售后中的物料不能删除，请先处理售后工单'}), 400
     if material['status'] == '故障中':
         return jsonify({'success': False, 'message': '故障中的物料不能删除，请先修复故障'}), 400
+    if material['status'] == '寄修中':
+        return jsonify({'success': False, 'message': '寄修中的物料不能删除，请先完成修复'}), 400
     db.execute("DELETE FROM version_changes WHERE sn=?", (sn,))
     db.execute("DELETE FROM after_sales_records WHERE sn=?", (sn,))
     db.execute("DELETE FROM fault_records WHERE sn=?", (sn,))
@@ -1583,11 +1651,13 @@ def api_export_faults():
     db = get_db()
     rows = db.execute("""
         SELECT f.sn, f.created_time, f.fault_reason, f.solution,
-               f.status, f.previous_status, f.resolved_time
+               f.status, f.previous_status, f.resolved_time,
+               f.repair_type, f.supplier, f.return_courier, f.return_tracking
         FROM fault_records f ORDER BY f.created_time DESC
     """).fetchall()
     cols = ['sn', 'created_time', 'fault_reason', 'solution',
-            'status', 'previous_status', 'resolved_time']
+            'status', 'previous_status', 'resolved_time',
+            'repair_type', 'supplier', 'return_courier', 'return_tracking']
     return _make_csv_response(rows, '故障记录.csv', cols)
 
 
@@ -1697,7 +1767,8 @@ def api_inventory_stats():
                 SUM(CASE WHEN m.status='在库' THEN 1 ELSE 0 END) AS in_stock,
                 SUM(CASE WHEN m.status='已出库' THEN 1 ELSE 0 END) AS outbound,
                 SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales,
-                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault
+                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault,
+                SUM(CASE WHEN m.status='寄修中' THEN 1 ELSE 0 END) AS repair
             FROM categories c
             LEFT JOIN materials m ON m.category_id = c.id
             WHERE c.parent_id = ?
