@@ -167,6 +167,14 @@ try:
         if deleted_from_cloud:
             if first_sync:
                 print(f'  ⚠ 首次同步：本地多出 {len(deleted_from_cloud)} 条，保留不删')
+            # 安全阀：如果要删的超过本地 30%，判定为云端异常，拒绝删除
+            elif len(deleted_from_cloud) > local_count * 0.3:
+                print(f'  🛑 安全阀触发！云端少了 {len(deleted_from_cloud)} 条（>{int(local_count*0.3)}），疑似云端重置，拒绝删除')
+                print(f'     如需强制同步请用 --force')
+                local_db.close()
+                remote_db.close()
+                os.remove(tmp)
+                sys.exit(1)
             else:
                 print(f'  云端已删除 {len(deleted_from_cloud)} 条，同步删除本地:')
                 for sn in deleted_from_cloud:
