@@ -24,6 +24,18 @@ DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(DATA_DIR, 'material.db')
 
 
+def validate_sn(sn):
+    """Validate SN format: 1-100 chars, alphanumeric + hyphens/underscores/dots only"""
+    if not sn or len(sn) > 100:
+        return False
+    return bool(re.match(r'^[A-Za-z0-9\-_\.]+$', sn))
+
+
+def escape_like(s):
+    """Escape LIKE wildcards to prevent user-input % or _ from causing unintended matches"""
+    return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DATABASE)
@@ -340,10 +352,10 @@ def index():
         conditions = []
         params = []
         for kw in keywords:
-            p = f'%{kw}%'
+            p = f'%{escape_like(kw)}%'
             conditions.append(
                 '(m.sn LIKE ? OR m.remarks LIKE ? OR '
-                'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? OR customer_company LIKE ?))')
+                'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? ESCAPE \'\\\' OR customer_company LIKE ? ESCAPE \'\\\'))')
             params.extend([p, p, p, p])
         sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
                + ' AND '.join(conditions) + ' ORDER BY m.inbound_time DESC')
@@ -799,6 +811,8 @@ def api_add_material():
     sn = data.get('sn', '').strip()
     if not sn:
         return jsonify({'success': False, 'message': 'SN 不能为空'}), 400
+    if not validate_sn(sn):
+        return jsonify({'success': False, 'message': 'SN 格式无效，仅允许字母、数字、连字符(-)、下划线(_)、点(.)，长度 1-100'}), 400
     if db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
         return jsonify({'success': False, 'message': f'SN "{sn}" 已存在'}), 400
 
@@ -833,6 +847,9 @@ def api_batch_add():
     sns_text = data.get('sns', '')
     sns = re.split(r'[,;\n\r]+', sns_text)
     sns = [s.strip() for s in sns if s.strip()]
+    invalid_sns = [s for s in sns if not validate_sn(s)]
+    if invalid_sns:
+        return jsonify({'success': False, 'message': f'以下SN格式无效: {", ".join(invalid_sns[:10])}'}), 400
     if not sns:
         return jsonify({'success': False, 'message': '未提供有效的SN'}), 400
 
@@ -887,6 +904,8 @@ def api_edit_material(sn):
 
     # SN 变更：检查是否为空、是否重复
     if new_sn and new_sn != sn:
+        if not validate_sn(new_sn):
+            return jsonify({'success': False, 'message': '新 SN 格式无效，仅允许字母、数字、连字符(-)、下划线(_)、点(.)，长度 1-100'}), 400
         if db.execute("SELECT sn FROM materials WHERE sn=?", (new_sn,)).fetchone():
             return jsonify({'success': False, 'message': f'SN "{new_sn}" 已存在，请使用其他SN'})
         # 暂时关闭外键约束，更新所有关联表
@@ -941,41 +960,57 @@ def api_edit_material(sn):
 
 @app.route('/api/outbound/<sn>', methods=['POST'])
 def api_outbound(sn):
+    """物料出库（带事务锁防止竞态）"""
     db = get_db()
-    mat = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
-    if not mat:
-        return jsonify({'success': False, 'message': '物料不存在'}), 404
-    if mat['status'] == '已出库':
-        return jsonify({'success': False, 'message': '该物料已出库，不能二次出库'}), 400
-    if mat['status'] == '售后中':
-        return jsonify({'success': False, 'message': '售后中的物料不能出库'}), 400
-    if mat['status'] == '故障中':
-        return jsonify({'success': False, 'message': '故障中的物料不能出库'}), 400
-    if mat['status'] == '寄修中':
-        return jsonify({'success': False, 'message': '寄修中的物料不能出库'}), 400
-    data = request.get_json(force=True)
-    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
-    # 寄回追踪（仅售后出库时有效）
-    return_status = data.get('return_status', '无需寄回')
-    return_sn = data.get('return_sn', '')
-    return_courier = data.get('return_courier', '')
-    return_tracking = data.get('return_tracking', '')
-    db.execute(
-        "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-        "courier_company, tracking_number, customer_name, customer_contact, "
-        "customer_company, address, remarks, return_status, return_sn, "
-        "return_courier, return_tracking) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (sn, now, data.get('purpose', ''), data.get('purpose_detail', ''),
-         data.get('courier_company', ''), data.get('tracking_number', ''),
-         data.get('customer_name', ''), data.get('customer_contact', ''),
-         data.get('customer_company', ''), data.get('address', ''),
-         data.get('remarks', ''), return_status, return_sn,
-         return_courier, return_tracking))
-    db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
-    db.commit()
-    log_operation('outbound', sn, f'出库（{data.get("purpose", "")}）')
-    return jsonify({'success': True, 'message': '出库操作完成'})
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        mat = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+        if not mat:
+            msg = '物料不存在'
+            code = 404
+            db.rollback()
+            return jsonify({'success': False, 'message': msg}), code
+        if mat['status'] == '已出库':
+            msg = '该物料已出库，不能二次出库'
+            db.rollback()
+            return jsonify({'success': False, 'message': msg}), 400
+        if mat['status'] == '售后中':
+            msg = '售后中的物料不能出库'
+            db.rollback()
+            return jsonify({'success': False, 'message': msg}), 400
+        if mat['status'] == '故障中':
+            msg = '故障中的物料不能出库'
+            db.rollback()
+            return jsonify({'success': False, 'message': msg}), 400
+        if mat['status'] == '寄修中':
+            msg = '寄修中的物料不能出库'
+            db.rollback()
+            return jsonify({'success': False, 'message': msg}), 400
+        data = request.get_json(force=True)
+        now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+        return_status = data.get('return_status', '无需寄回')
+        return_sn = data.get('return_sn', '')
+        return_courier = data.get('return_courier', '')
+        return_tracking = data.get('return_tracking', '')
+        db.execute(
+            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+            "courier_company, tracking_number, customer_name, customer_contact, "
+            "customer_company, address, remarks, return_status, return_sn, "
+            "return_courier, return_tracking) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sn, now, data.get('purpose', ''), data.get('purpose_detail', ''),
+             data.get('courier_company', ''), data.get('tracking_number', ''),
+             data.get('customer_name', ''), data.get('customer_contact', ''),
+             data.get('customer_company', ''), data.get('address', ''),
+             data.get('remarks', ''), return_status, return_sn,
+             return_courier, return_tracking))
+        db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
+        db.commit()
+        log_operation('outbound', sn, f'出库（{data.get("purpose", "")}）')
+        return jsonify({'success': True, 'message': '出库操作完成'})
+    except Exception:
+        db.rollback()
+        raise
 
 
 @app.route('/api/outbound/<int:record_id>', methods=['PUT'])
@@ -1075,26 +1110,33 @@ def api_restock(sn):
 
 @app.route('/api/aftersales/<sn>', methods=['POST'])
 def api_aftersales(sn):
+    """创建售后工单（带事务锁防止竞态）"""
     db = get_db()
-    if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
-        return jsonify({'success': False, 'message': '物料不存在'}), 404
-    # 检查是否已有处理中的售后工单
-    active = db.execute(
-        "SELECT id FROM after_sales_records WHERE sn=? AND status='处理中'", (sn,)
-    ).fetchone()
-    if active:
-        return jsonify({'success': False, 'message': f'该物料已有售后工单 #{active["id"]} 处理中，请先完成后再创建'}), 400
-    data = request.get_json(force=True)
-    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
-    db.execute(
-        "INSERT INTO after_sales_records (sn, created_time, return_courier, "
-        "return_tracking, problem_description, status) VALUES (?,?,?,?,?,?)",
-        (sn, now, data.get('return_courier', ''), data.get('return_tracking', ''),
-         data.get('problem_description', ''), '处理中'))
-    db.execute("UPDATE materials SET status='售后中' WHERE sn=?", (sn,))
-    db.commit()
-    log_operation('aftersales_create', sn, '创建售后工单')
-    return jsonify({'success': True, 'message': '售后工单已创建'})
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if not db.execute("SELECT sn FROM materials WHERE sn=?", (sn,)).fetchone():
+            db.rollback()
+            return jsonify({'success': False, 'message': '物料不存在'}), 404
+        active = db.execute(
+            "SELECT id FROM after_sales_records WHERE sn=? AND status='处理中'", (sn,)
+        ).fetchone()
+        if active:
+            db.rollback()
+            return jsonify({'success': False, 'message': f'该物料已有售后工单 #{active["id"]} 处理中，请先完成后再创建'}), 400
+        data = request.get_json(force=True)
+        now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+        db.execute(
+            "INSERT INTO after_sales_records (sn, created_time, return_courier, "
+            "return_tracking, problem_description, status) VALUES (?,?,?,?,?,?)",
+            (sn, now, data.get('return_courier', ''), data.get('return_tracking', ''),
+             data.get('problem_description', ''), '处理中'))
+        db.execute("UPDATE materials SET status='售后中' WHERE sn=?", (sn,))
+        db.commit()
+        log_operation('aftersales_create', sn, '创建售后工单')
+        return jsonify({'success': True, 'message': '售后工单已创建'})
+    except Exception:
+        db.rollback()
+        raise
 
 
 @app.route('/api/aftersales/complete/<int:record_id>', methods=['POST'])
@@ -1134,64 +1176,69 @@ def api_aftersales_complete(record_id):
 
 @app.route('/api/fault/<sn>', methods=['POST'])
 def api_fault(sn):
-    """创建故障记录。支持本地维修和寄修两种模式"""
+    """创建故障记录（带事务锁防止竞态）。支持本地维修和寄修两种模式"""
     db = get_db()
-    material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
-    if not material:
-        return jsonify({'success': False, 'message': '物料不存在'}), 404
-    if material['status'] == '售后中':
-        return jsonify({'success': False, 'message': '售后中的物料不能创建故障记录，请先完成售后'}), 400
-    if material['status'] == '寄修中':
-        return jsonify({'success': False, 'message': '该物料已在寄修中，请先完成修复'}), 400
-    # 检查是否已有故障中的记录
-    active = db.execute(
-        "SELECT id FROM fault_records WHERE sn=? AND status IN ('故障中','寄修中')", (sn,)
-    ).fetchone()
-    if active:
-        return jsonify({'success': False, 'message': f'该物料已有故障记录 #{active["id"]} 处理中，请先修复后再创建'}), 400
-    data = request.get_json(force=True)
-    now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
-    repair_type = data.get('repair_type', '本地维修')
-    preserve_status = material['status'] == '已出库'  # 已出库设备：记录故障但不改变物料状态
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        material = db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
+        if not material:
+            db.rollback()
+            return jsonify({'success': False, 'message': '物料不存在'}), 404
+        if material['status'] == '售后中':
+            db.rollback()
+            return jsonify({'success': False, 'message': '售后中的物料不能创建故障记录，请先完成售后'}), 400
+        if material['status'] == '寄修中':
+            db.rollback()
+            return jsonify({'success': False, 'message': '该物料已在寄修中，请先完成修复'}), 400
+        active = db.execute(
+            "SELECT id FROM fault_records WHERE sn=? AND status IN ('故障中','寄修中')", (sn,)
+        ).fetchone()
+        if active:
+            db.rollback()
+            return jsonify({'success': False, 'message': f'该物料已有故障记录 #{active["id"]} 处理中，请先修复后再创建'}), 400
+        data = request.get_json(force=True)
+        now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+        repair_type = data.get('repair_type', '本地维修')
+        preserve_status = material['status'] == '已出库'
 
-    if repair_type == '寄修':
-        # 寄修：验证必填字段
-        supplier = data.get('supplier', '').strip()
-        courier_company = data.get('courier_company', '').strip()
-        tracking_number = data.get('tracking_number', '').strip()
-        if not supplier or not courier_company or not tracking_number:
-            return jsonify({'success': False, 'message': '寄修时供应商、快递公司和快递单号为必填'}), 400
-        if preserve_status:
-            return jsonify({'success': False, 'message': '已出库设备不能寄修，请先重新入库'}), 400
-        # 创建故障记录
-        db.execute(
-            "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status, repair_type, supplier) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (sn, now, data.get('fault_reason', ''), '寄修中', material['status'], '寄修', supplier))
-        # 创建出库记录（寄修出库）
-        db.execute(
-            "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
-            "courier_company, tracking_number, customer_name, customer_company, remarks) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (sn, now, '寄修出库', f'寄修至 {supplier}', courier_company, tracking_number,
-             supplier, '', data.get('fault_reason', '')))
-        # 更新物料状态
-        db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
-        db.commit()
-        log_operation('fault_create', sn, f'创建寄修故障记录: {data.get("fault_reason", "")}，寄修至 {supplier}')
-        return jsonify({'success': True, 'message': f'{sn} 已标记为寄修中，寄修出库至 {supplier}'})
-    else:
-        # 本地维修：保持现有逻辑
-        db.execute(
-            "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
-            "VALUES (?,?,?,?,?)",
-            (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
-        if not preserve_status:
-            db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
-        db.commit()
-        msg = f'{sn} 已记录故障工单' if preserve_status else f'{sn} 已标记为故障中'
-        log_operation('fault_create', sn, f'创建故障记录: {data.get("fault_reason", "")}' + ('（已出库设备，状态不变）' if preserve_status else ''))
-        return jsonify({'success': True, 'message': msg})
+        if repair_type == '寄修':
+            supplier = data.get('supplier', '').strip()
+            courier_company = data.get('courier_company', '').strip()
+            tracking_number = data.get('tracking_number', '').strip()
+            if not supplier or not courier_company or not tracking_number:
+                db.rollback()
+                return jsonify({'success': False, 'message': '寄修时供应商、快递公司和快递单号为必填'}), 400
+            if preserve_status:
+                db.rollback()
+                return jsonify({'success': False, 'message': '已出库设备不能寄修，请先重新入库'}), 400
+            db.execute(
+                "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status, repair_type, supplier) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (sn, now, data.get('fault_reason', ''), '寄修中', material['status'], '寄修', supplier))
+            db.execute(
+                "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
+                "courier_company, tracking_number, customer_name, customer_company, remarks) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (sn, now, '寄修出库', f'寄修至 {supplier}', courier_company, tracking_number,
+                 supplier, '', data.get('fault_reason', '')))
+            db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
+            db.commit()
+            log_operation('fault_create', sn, f'创建寄修故障记录: {data.get("fault_reason", "")}，寄修至 {supplier}')
+            return jsonify({'success': True, 'message': f'{sn} 已标记为寄修中，寄修出库至 {supplier}'})
+        else:
+            db.execute(
+                "INSERT INTO fault_records (sn, created_time, fault_reason, status, previous_status) "
+                "VALUES (?,?,?,?,?)",
+                (sn, now, data.get('fault_reason', ''), '故障中', material['status']))
+            if not preserve_status:
+                db.execute("UPDATE materials SET status='故障中' WHERE sn=?", (sn,))
+            db.commit()
+            msg = f'{sn} 已记录故障工单' if preserve_status else f'{sn} 已标记为故障中'
+            log_operation('fault_create', sn, f'创建故障记录: {data.get("fault_reason", "")}' + ('（已出库设备，状态不变）' if preserve_status else ''))
+            return jsonify({'success': True, 'message': msg})
+    except Exception:
+        db.rollback()
+        raise
 
 
 @app.route('/api/fault/resolve/<int:record_id>', methods=['POST'])
@@ -1446,8 +1493,8 @@ def api_search_sn():
         "FROM materials m "
         "LEFT JOIN categories c ON m.category_id = c.id "
         "LEFT JOIN categories p ON c.parent_id = p.id "
-        "WHERE m.sn LIKE ? ORDER BY m.inbound_time DESC LIMIT 20",
-        (f'%{q}%',)
+        "WHERE m.sn LIKE ? ESCAPE '\\' ORDER BY m.inbound_time DESC LIMIT 20",
+        (f'%{escape_like(q)}%',)
     ).fetchall()
     return jsonify([{'sn': r['sn'], 'status': r['status'],
                      'cat_name': r['cat_name'], 'parent_name': r['parent_name']} for r in rows])
@@ -1545,8 +1592,8 @@ def api_operation_logs():
         conditions.append('op_type = ?')
         params.append(op_type)
     if sn:
-        conditions.append('sn LIKE ?')
-        params.append(f'%{sn}%')
+        conditions.append('sn LIKE ? ESCAPE \'\\\'')
+        params.append(f'%{escape_like(sn)}%')
 
     where = (' WHERE ' + ' AND '.join(conditions)) if conditions else ''
     total = db.execute(f"SELECT COUNT(*) FROM operation_logs{where}", params).fetchone()[0]
@@ -1575,6 +1622,14 @@ import io
 from urllib.parse import quote
 
 
+def _sanitize_csv_cell(value):
+    """Prevent CSV formula injection: prefix cells starting with =, +, -, @ with a single quote"""
+    s = str(value) if value is not None else ''
+    if s and s[0] in ('=', '+', '-', '@'):
+        return "'" + s
+    return s
+
+
 def _make_csv_response(rows, filename, columns):
     """生成 CSV 文件响应，带 BOM 兼容 Excel 中文打开"""
     output = io.StringIO()
@@ -1583,9 +1638,9 @@ def _make_csv_response(rows, filename, columns):
     writer.writerow(columns)
     for row in rows:
         if isinstance(row, dict):
-            writer.writerow([row.get(c, '') for c in columns])
+            writer.writerow([_sanitize_csv_cell(row.get(c, '')) for c in columns])
         else:
-            writer.writerow([row[c] if c in row.keys() else '' for c in columns])
+            writer.writerow([_sanitize_csv_cell(row[c]) if c in row.keys() else '' for c in columns])
     resp = app.response_class(output.getvalue(), mimetype='text/csv; charset=utf-8')
     resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
     return resp
@@ -1972,8 +2027,10 @@ def health():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-# 数据库同步密匙（与 sync_db.py 保持一致）
-SYNC_TOKEN = 'wlgz-sync-2026'
+# 数据库同步密匙（从环境变量读取，与 sync_db.py 保持一致）
+SYNC_TOKEN = os.environ.get('WLGZ_SYNC_TOKEN', '')
+if not SYNC_TOKEN:
+    print('[WARNING] WLGZ_SYNC_TOKEN 环境变量未设置，数据库同步接口已禁用')
 
 
 @app.route('/api/db/download')
@@ -2031,6 +2088,6 @@ if __name__ == '__main__':
     print("  物料全流程追溯系统 v2.0")
     print("  本地访问: http://127.0.0.1:8080")
     print("=" * 60)
-    app.run(host='0.0.0.0', port=8080, debug=True, threaded=True)
+    app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)
 else:
     create_app()

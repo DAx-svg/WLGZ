@@ -21,13 +21,16 @@ import shutil
 import json
 import sqlite3
 import urllib.request
+import urllib.parse
 from datetime import datetime
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 REMOTE_BASE = 'https://daxsvg.pythonanywhere.com'
-REMOTE_DB = REMOTE_BASE + '/api/db/download?token=wlgz-sync-2026'
+SYNC_TOKEN = os.environ.get('WLGZ_SYNC_TOKEN', '')
+REMOTE_DB = REMOTE_BASE + '/api/db/download?token=' + urllib.parse.quote(SYNC_TOKEN, safe='')
+REMOTE_UPLOAD = REMOTE_BASE + '/api/db/upload'
 LOCAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'material.db')
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_state.json')
 FORCE = '--force' in sys.argv
