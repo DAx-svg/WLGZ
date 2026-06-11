@@ -335,6 +335,18 @@ def index():
     sub_cat_id = request.args.get('cat', '').strip()
     parent_id = request.args.get('parent', '').strip()
     show_orphan = request.args.get('orphan', '').strip()
+
+    # If sub-category selected without explicit parent, infer the parent
+    if sub_cat_id and not parent_id:
+        try:
+            parent_row = db.execute(
+                "SELECT parent_id FROM categories WHERE id=?", (int(sub_cat_id),)
+            ).fetchone()
+            if parent_row and parent_row['parent_id']:
+                parent_id = str(parent_row['parent_id'])
+        except (ValueError, TypeError):
+            pass
+
     filter_status = request.args.get('status', '').strip()
     filter_return = request.args.get('returning', '').strip()
     show_month_in = request.args.get('month_in', '').strip()
