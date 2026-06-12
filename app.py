@@ -857,7 +857,7 @@ def api_batch_add():
     db = get_db()
     data = request.get_json(force=True)
     sns_text = data.get('sns', '')
-    sns = re.split(r'[,;\n\r]+', sns_text)
+    sns = re.split(r'[,;；：:、\n\r]+', sns_text)
     sns = [s.strip() for s in sns if s.strip()]
     invalid_sns = [s for s in sns if not validate_sn(s)]
     if invalid_sns:

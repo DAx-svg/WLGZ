@@ -112,7 +112,7 @@
                             <div class="col-12">
                                 <label class="form-label">SN 列表 <span class="text-danger">*</span></label>
                                 <textarea class="form-control" id="batchSns" rows="6"
-                                    placeholder="换行、逗号或分号分隔&#10;SN-2024-006&#10;SN-2024-007"
+                                    placeholder="换行、逗号、分号、冒号、顿号分隔&#10;SN-2024-006&#10;SN-2024-007"
                                     style="font-family:monospace;"></textarea>
                                 <div class="mt-1">
                                     <button class="btn btn-outline-info btn-sm" type="button" id="batchFillBtn" title="用第一个SN查找相似物料并填充"><i class="bi bi-search"></i> 查找相似SN填充</button>
@@ -340,7 +340,7 @@ document.getElementById('singleFillBtn').addEventListener('click', function(){
 document.getElementById('batchFillBtn').addEventListener('click', function(){
     var text = document.getElementById('batchSns').value.trim();
     if(!text){ st('请先输入SN', false); return; }
-    var sns = text.split(/[\,;\s]+/).filter(function(s){return s.trim();});
+    var sns = text.split(/[\,;；：:、\s]+/).filter(function(s){return s.trim();});
     if(sns.length === 0){ st('未解析到有效SN', false); return; }
     autoFillFromSimilar(sns[0].trim(), true);
 });
