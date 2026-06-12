@@ -149,27 +149,49 @@
     <!-- 图表折叠面板 -->
     <div class="mb-3">
         <button id="chartBtn" class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#chartPanel" >
-            <i class="bi bi-graph-up"></i> 本月统计图表
+            <i class="bi bi-graph-up"></i> 品类趋势分析
         </button>
     </div>
     <div class="collapse" id="chartPanel">
         <div class="card shadow-sm mb-3">
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-2"><i class="bi bi-bar-chart"></i> 各状态数量</h6>
-                        <canvas id="statusChart" height="200"></canvas>
+                <!-- 筛选栏 -->
+                <div class="row g-2 mb-3 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">起始月份</label>
+                        <input type="month" id="chartMonthStart" class="form-control form-control-sm" style="width:160px;">
                     </div>
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-2"><i class="bi bi-graph-up"></i> 月度趋势（近12月）</h6>
-                        <canvas id="trendChart" height="200"></canvas>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">结束月份</label>
+                        <input type="month" id="chartMonthEnd" class="form-control form-control-sm" style="width:160px;">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">品类</label>
+                        <select id="chartParentSelect" class="form-select form-select-sm" style="width:150px;">
+                            <option value="">-- 全部分类 --</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">&nbsp;</label>
+                        <select id="chartSubSelect" class="form-select form-select-sm" style="width:150px;">
+                            <option value="">-- 全部小类 --</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">&nbsp;</label>
+                        <button id="chartRefreshBtn" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 查询</button>
                     </div>
                 </div>
+                <!-- 图表 -->
+                <div style="position:relative;height:300px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+                <p class="text-muted small mt-2 mb-0"><i class="bi bi-info-circle"></i> 显示所选品类各状态在时间轴上的月度数量变化</p>
             </div>
         </div>
     </div>
 
-    <!-- SN 搜索 -->
+    <!-- SN 搜索 <!-- SN 搜索 -->
     <form method="GET" class="mb-3">
         <div class="input-group" style="max-width:420px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -700,56 +722,142 @@ document.getElementById('catManageModal').addEventListener('show.bs.modal', func
 document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
     if (catMgmtChanged) location.reload();
 });
-// ====== 图表 ======
-// 面板展开后再加载图表（canvas 需可见才能测量）
-document.getElementById('chartBtn').addEventListener('click', function() {
-    setTimeout(function() { loadChart(); }, 350);
-});
-
-let chartLoaded = false;
-let statusChartInstance = null;
+// ====== 品类趋势分析图表 ======
 let trendChartInstance = null;
 
+// 加载品类下拉
+async function loadChartCategories() {
+    const resp = await fetch('/api/categories');
+    const data = await resp.json();
+    const parentSel = document.getElementById('chartParentSelect');
+    const subSel = document.getElementById('chartSubSelect');
+    parentSel.innerHTML = '<option value="">-- 全部分类 --</option>';
+    data.parents.forEach(function(p) {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        parentSel.appendChild(opt);
+    });
+    parentSel.onchange = function() {
+        const pid = this.value;
+        subSel.innerHTML = '<option value="">-- 全部小类 --</option>';
+        if (!pid) return;
+        data.subs.forEach(function(s) {
+            if (s.parent_id == pid) {
+                const opt = document.createElement('option');
+                opt.value = s.id; opt.textContent = s.name;
+                subSel.appendChild(opt);
+            }
+        });
+    };
+}
+
+// 设置默认月份（近12个月）
+function setDefaultMonths() {
+    const now = new Date();
+    const end = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    const d = new Date(now.getFullYear()-1, now.getMonth(), 1);
+    const startStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    document.getElementById('chartMonthEnd').value = end;
+    document.getElementById('chartMonthStart').value = startStr;
+}
+
 async function loadChart() {
+    const parentId = document.getElementById('chartParentSelect').value;
+    const subId = document.getElementById('chartSubSelect').value;
+    const monthStart = document.getElementById('chartMonthStart').value;
+    const monthEnd = document.getElementById('chartMonthEnd').value;
+
+    if (!monthStart || !monthEnd) {
+        showToast('请选择月份范围', false);
+        return;
+    }
+
+    const params = new URLSearchParams();
+    if (parentId) params.set('parent_id', parentId);
+    if (subId) params.set('subcategory_id', subId);
+    if (monthStart) params.set('month_start', monthStart);
+    if (monthEnd) params.set('month_end', monthEnd);
+
     try {
-        const resp = await fetch('/api/dashboard/stats');
+        const resp = await fetch('/api/dashboard/category_trend?' + params.toString());
         const data = await resp.json();
 
-        const statusMap = data.status_counts || {};
-        const statusLabels = ['在库', '已出库', '售后中', '故障中', '寄修中'];
-        const statusValues = statusLabels.map(s => statusMap[s] || 0);
-        const statusColors = ['#28a745', '#ffc107', '#dc3545', '#fd7e14', '#ff6b6b'];
+        const months = data.months || [];
+        const series = data.series || {};
 
-        const ctx1 = document.getElementById('statusChart').getContext('2d');
-        if (statusChartInstance) statusChartInstance.destroy();
-        statusChartInstance = new Chart(ctx1, {
-            type: 'doughnut',
-            data: {
-                labels: statusLabels,
-                datasets: [{ data: statusValues, backgroundColor: statusColors, borderWidth: 0 }]
-            },
-            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        const colorMap = {
+            '\u5728\u5e93': { color: '#28a745', label: '\u5728\u5e93' },
+            '\u5df2\u51fa\u5e93': { color: '#e6a817', label: '\u5df2\u51fa\u5e93' },
+            '\u552e\u540e\u4e2d': { color: '#dc3545', label: '\u552e\u540e\u4e2d' },
+            '\u6545\u969c\u4e2d': { color: '#fd7e14', label: '\u6545\u969c\u4e2d' },
+            '\u5bc4\u4fee\u4e2d': { color: '#ff6b6b', label: '\u5bc4\u4fee\u4e2d' }
+        };
+        const order = ['\u5728\u5e93', '\u5df2\u51fa\u5e93', '\u552e\u540e\u4e2d', '\u6545\u969c\u4e2d', '\u5bc4\u4fee\u4e2d'];
+
+        const datasets = [];
+        order.forEach(function(key) {
+            const values = series[key];
+            if (values && values.some(function(v) { return v > 0; })) {
+                const cfg = colorMap[key] || { color: '#6f42c1', label: key };
+                datasets.push({
+                    label: cfg.label,
+                    data: values,
+                    borderColor: cfg.color,
+                    backgroundColor: cfg.color + '20',
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                });
+            }
         });
 
-        const months = (data.month_in || []).reverse();
-        const labels = months.map(m => m.month);
-        const inboundData = months.map(m => m.count);
-        const outMap = {};
-        (data.month_out || []).forEach(m => { outMap[m.month] = m.count; });
-        const outboundData = labels.map(l => outMap[l] || 0);
+        if (datasets.length === 0) {
+            datasets.push({
+                label: '\uff08\u6682\u65e0\u6570\u636e\uff09',
+                data: months.map(function() { return 0; }),
+                borderColor: '#ccc',
+                borderDash: [5,5],
+                fill: false,
+                pointRadius: 0
+            });
+        }
 
-        const ctx2 = document.getElementById('trendChart').getContext('2d');
+        const ctx = document.getElementById('trendChart').getContext('2d');
         if (trendChartInstance) trendChartInstance.destroy();
-        trendChartInstance = new Chart(ctx2, {
+        trendChartInstance = new Chart(ctx, {
             type: 'line',
-            data: { labels: labels, datasets: [
-                { label: '入库', data: inboundData, borderColor: '#28a745', fill: false, tension: 0.1 },
-                { label: '出库', data: outboundData, borderColor: '#dc3545', fill: false, tension: 0.1 }
-            ]},
-            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            data: { labels: months, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + ' \u4ef6'; } } }
+                },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                    x: { grid: { display: false } }
+                }
+            }
         });
-    } catch(e) { console.error('Chart error:', e); }
+    } catch(e) {
+        console.error('Chart error:', e);
+        showToast('\u56fe\u8868\u52a0\u8f7d\u5931\u8d25', false);
+    }
 }
-</script>
+
+// 面板打开时初始化
+document.getElementById('chartPanel').addEventListener('shown.bs.collapse', function() {
+    loadChartCategories();
+    setDefaultMonths();
+    setTimeout(function() { loadChart(); }, 300);
+});
+
+// 查询按钮
+document.getElementById('chartRefreshBtn').addEventListener('click', function() {
+    loadChart();
+});</script>
 </body>
 </html>

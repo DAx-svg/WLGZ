@@ -1,4 +1,4 @@
-"""
+﻿"""
 物料全流程追溯系统 v2.0
 ====================
 基于 Flask + SQLite 的公司内部物料追溯管理系统。
@@ -2048,6 +2048,112 @@ def api_dashboard_stats():
         'month_out': [{'month': r['m'], 'count': r['cnt']} for r in month_out],
         'top_categories': [{'name': r['name'], 'count': r['cnt']} for r in top_cats],
         'purpose_dist': [{'purpose': r['purpose'], 'count': r['cnt']} for r in purpose_dist],
+    })
+
+
+@app.route('/api/dashboard/category_trend')
+def api_category_trend():
+    """品类+月份筛选的趋势数据，供新图表使用"""
+    db = get_db()
+    parent_id = request.args.get('parent_id', type=int)
+    sub_id = request.args.get('subcategory_id', type=int)
+    month_start = request.args.get('month_start', '')
+    month_end = request.args.get('month_end', '')
+
+    # 构建品类 WHERE 条件
+    cat_clause = ''
+    cat_params = []
+    if sub_id:
+        cat_clause = 'AND m.category_id = ?'
+        cat_params.append(sub_id)
+    elif parent_id:
+        cat_clause = 'AND m.category_id IN (SELECT id FROM categories WHERE parent_id = ?)'
+        cat_params.append(parent_id)
+
+    # 月份条件
+    month_clause = ''
+    month_params = []
+    if month_start:
+        month_clause += ' AND substr(o.outbound_time,1,7) >= ?'
+        month_params.append(month_start)
+    if month_end:
+        month_clause += ' AND substr(o.outbound_time,1,7) <= ?'
+        month_params.append(month_end)
+
+    # 1) 按月+目的统计出库数量
+    outbounds = db.execute(
+        'SELECT substr(o.outbound_time,1,7) AS month, o.purpose, COUNT(*) AS cnt'
+        ' FROM outbound_records o JOIN materials m ON o.sn = m.sn'
+        ' WHERE 1=1' + cat_clause + month_clause +
+        ' GROUP BY month, o.purpose ORDER BY month',
+        cat_params + month_params
+    ).fetchall()
+
+    # 2) 按月统计入库数量
+    in_month_clause = ''
+    in_month_params = []
+    if month_start:
+        in_month_clause += ' AND substr(inbound_time,1,7) >= ?'
+        in_month_params.append(month_start)
+    if month_end:
+        in_month_clause += ' AND substr(inbound_time,1,7) <= ?'
+        in_month_params.append(month_end)
+
+    inbound_by_month = db.execute(
+        'SELECT substr(inbound_time,1,7) AS month, COUNT(*) AS cnt'
+        ' FROM materials m WHERE 1=1' + cat_clause + in_month_clause +
+        ' GROUP BY month ORDER BY month',
+        cat_params + in_month_params
+    ).fetchall()
+
+    # 收集所有月份
+    all_months_set = set()
+    for r in outbounds:
+        all_months_set.add(r['month'])
+    for r in inbound_by_month:
+        all_months_set.add(r['month'])
+    all_months = sorted(all_months_set)
+
+    if not all_months:
+        return jsonify({'months': [], 'series': {}})
+
+    # 3) 计算每个月末的在库数量
+    all_materials = db.execute(
+        'SELECT m.sn, m.status, m.inbound_time,'
+        ' (SELECT MAX(o2.outbound_time) FROM outbound_records o2 WHERE o2.sn = m.sn) AS last_out'
+        ' FROM materials m WHERE 1=1' + cat_clause,
+        cat_params
+    ).fetchall()
+
+    purposes = set()
+    outbound_by_month_purpose = {}
+    for r in outbounds:
+        purposes.add(r['purpose'])
+        key = (r['month'], r['purpose'])
+        outbound_by_month_purpose[key] = r['cnt']
+
+    purpose_order = ['已出库', '售后中', '故障中', '寄修中']
+    tracked_purposes = [p for p in purpose_order if p in purposes]
+
+    in_stock_by_month = {}
+    for m in all_months:
+        month_end_str = m + '-31'
+        cnt = 0
+        for mat in all_materials:
+            if mat['inbound_time'] and mat['inbound_time'] <= month_end_str:
+                if mat['last_out'] is None or mat['last_out'] > month_end_str:
+                    cnt += 1
+        in_stock_by_month[m] = cnt
+
+    series = {}
+    series['在库'] = [in_stock_by_month.get(m, 0) for m in all_months]
+    for p in tracked_purposes:
+        series[p] = [outbound_by_month_purpose.get((m, p), 0) for m in all_months]
+
+    return jsonify({
+        'months': all_months,
+        'series': series,
+        'purposes': tracked_purposes,
     })
 
 
