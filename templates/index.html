@@ -182,16 +182,59 @@
                         <button id="chartRefreshBtn" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 查询</button>
                     </div>
                 </div>
-                <!-- 图表 -->
-                <div style="position:relative;height:300px;">
+
+                <!-- KPI 摘要行 -->
+                <div class="row g-2 mb-3" id="chartKpiRow" style="display:none;">
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">期初在库</div>
+                                <div class="fs-5 fw-bold text-success" id="kpiStartStock">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">期末在库</div>
+                                <div class="fs-5 fw-bold text-primary" id="kpiEndStock">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">出库合计</div>
+                                <div class="fs-5 fw-bold" style="color:#e6a817;" id="kpiTotalOut">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">月均出库</div>
+                                <div class="fs-5 fw-bold text-info" id="kpiAvgOut">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">库存变化</div>
+                                <div class="fs-5 fw-bold" id="kpiStockChange">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 组合图：堆叠柱状图(出库) + 折线(在库) -->
+                <div style="position:relative;height:320px;">
                     <canvas id="trendChart"></canvas>
                 </div>
-                <p class="text-muted small mt-2 mb-0"><i class="bi bi-info-circle"></i> 显示所选品类各状态在时间轴上的月度数量变化</p>
+                <p class="text-muted small mt-2 mb-0"><i class="bi bi-info-circle"></i> 柱状图=各出库目的月度分布，折线=在库数量变化</p>
             </div>
         </div>
-    </div>
-
-    <!-- SN 搜索 <!-- SN 搜索 -->
+    </div><!-- SN 搜索 <!-- SN 搜索 -->
     <form method="GET" class="mb-3">
         <div class="input-group" style="max-width:420px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -722,10 +765,9 @@ document.getElementById('catManageModal').addEventListener('show.bs.modal', func
 document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
     if (catMgmtChanged) location.reload();
 });
-// ====== 品类趋势分析图表 ======
+// ====== 品类趋势分析（组合图：堆叠柱状+折线） ======
 let trendChartInstance = null;
 
-// 加载品类下拉
 async function loadChartCategories() {
     const resp = await fetch('/api/categories');
     const data = await resp.json();
@@ -751,7 +793,6 @@ async function loadChartCategories() {
     };
 }
 
-// 设置默认月份（近12个月）
 function setDefaultMonths() {
     const now = new Date();
     const end = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
@@ -766,11 +807,7 @@ async function loadChart() {
     const subId = document.getElementById('chartSubSelect').value;
     const monthStart = document.getElementById('chartMonthStart').value;
     const monthEnd = document.getElementById('chartMonthEnd').value;
-
-    if (!monthStart || !monthEnd) {
-        showToast('请选择月份范围', false);
-        return;
-    }
+    if (!monthStart || !monthEnd) { showToast('请选择月份范围', false); return; }
 
     const params = new URLSearchParams();
     if (parentId) params.set('parent_id', parentId);
@@ -781,87 +818,148 @@ async function loadChart() {
     try {
         const resp = await fetch('/api/dashboard/category_trend?' + params.toString());
         const data = await resp.json();
-
         const months = data.months || [];
         const series = data.series || {};
 
-        const colorMap = {
-            '\u5728\u5e93': { color: '#28a745', label: '\u5728\u5e93' }
-        };
-        const defaultColors = ['#28a745', '#e6a817', '#dc3545', '#fd7e14', '#ff6b6b', '#6f42c1', '#17a2b8', '#6610f2', '#e83e8c', '#20c997'];
-        var colorIdx = 1;
-        const allKeys = Object.keys(series);
-        const datasets = [];
-        allKeys.forEach(function(key) {
-            const values = series[key];
-            if (!values || !Array.isArray(values)) return;
+        const stockColor = '#28a745';
+        const palette = ['#e6a817', '#dc3545', '#fd7e14', '#ff6b6b', '#6f42c1', '#17a2b8', '#6610f2', '#e83e8c', '#20c997', '#adb5bd'];
+
+        var stockValues = series['在库'] || [];
+        var barDatasets = [];
+        var colorIdx = 0;
+
+        Object.keys(series).forEach(function(key) {
+            if (key === '在库') return;
+            var vals = series[key];
+            if (!vals || !Array.isArray(vals)) return;
             var hasData = false;
-            for (var idx = 0; idx < values.length; idx++) {
-                if (values[idx] > 0) { hasData = true; break; }
-            }
+            for (var i = 0; i < vals.length; i++) { if (vals[i] > 0) { hasData = true; break; } }
             if (!hasData) return;
-            var cfg = colorMap[key];
-            if (!cfg) {
-                var c = defaultColors[colorIdx % defaultColors.length];
-                colorIdx++;
-                cfg = { color: c, label: key };
-                colorMap[key] = cfg;
-            }
-            datasets.push({
-                label: cfg.label,
-                data: values,
-                borderColor: cfg.color,
-                backgroundColor: cfg.color + '20',
-                fill: false,
-                tension: 0.2,
-                pointRadius: 4,
-                pointHoverRadius: 6
+            var c = palette[colorIdx % palette.length]; colorIdx++;
+            barDatasets.push({
+                label: key,
+                data: vals,
+                backgroundColor: c,
+                borderColor: c,
+                borderWidth: 1
             });
         });
-if (datasets.length === 0) {
-            datasets.push({
-                label: '\uff08\u6682\u65e0\u6570\u636e\uff09',
+
+        var allDatasets = barDatasets.slice();
+
+        if (stockValues.length > 0) {
+            // 在库作为折线（有出库数据时）或柱状（仅有在库时）
+            if (barDatasets.length > 0) {
+                allDatasets.push({
+                    label: '在库',
+                    data: stockValues,
+                    type: 'line',
+                    borderColor: stockColor,
+                    backgroundColor: stockColor + '20',
+                    pointBackgroundColor: stockColor,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 2.5,
+                    order: 0
+                });
+            } else {
+                allDatasets.push({
+                    label: '在库',
+                    data: stockValues,
+                    backgroundColor: stockColor + '80',
+                    borderColor: stockColor,
+                    borderWidth: 1,
+                    borderRadius: 4
+                });
+            }
+        }
+
+        if (allDatasets.length === 0) {
+            allDatasets.push({
+                label: '（暂无数据）',
                 data: months.map(function() { return 0; }),
-                borderColor: '#ccc',
-                borderDash: [5,5],
-                fill: false,
-                pointRadius: 0
+                backgroundColor: '#eee',
+                borderColor: '#ccc'
             });
         }
 
-        const ctx = document.getElementById('trendChart').getContext('2d');
+        var ctx = document.getElementById('trendChart').getContext('2d');
         if (trendChartInstance) trendChartInstance.destroy();
         trendChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: { labels: months, datasets: datasets },
+            type: 'bar',
+            data: { labels: months, datasets: allDatasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { position: 'bottom' },
-                    tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + ' \u4ef6'; } } }
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 14, padding: 12, usePointStyle: true, pointStyle: 'circle' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + ' 件'; }
+                        }
+                    }
                 },
                 scales: {
-                    y: { beginAtZero: true, ticks: { stepSize: 1 } },
-                    x: { grid: { display: false } }
+                    x: {
+                        stacked: true,
+                        grid: { display: false },
+                        ticks: { font: { size: 11 } }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { stepSize: 1, font: { size: 11 } },
+                        grid: { color: 'rgba(0,0,0,0.06)' }
+                    }
                 }
             }
         });
+
+        // 更新 KPI 摘要
+        var kpiRow = document.getElementById('chartKpiRow');
+        if (months.length > 0 && stockValues.length > 0) {
+            var startStock = stockValues[0];
+            var endStock = stockValues[stockValues.length - 1];
+            var totalOut = 0;
+            barDatasets.forEach(function(ds) {
+                ds.data.forEach(function(v) { totalOut += v; });
+            });
+            var monthCount = months.length;
+            var avgOut = Math.round(totalOut / monthCount);
+            var change = endStock - startStock;
+            var changeStr = (change >= 0 ? '+' : '') + change;
+            var changeColor = change >= 0 ? '#28a745' : '#dc3545';
+            document.getElementById('kpiStartStock').textContent = startStock;
+            document.getElementById('kpiEndStock').textContent = endStock;
+            document.getElementById('kpiTotalOut').textContent = totalOut;
+            document.getElementById('kpiAvgOut').textContent = avgOut;
+            var changeEl = document.getElementById('kpiStockChange');
+            changeEl.textContent = changeStr;
+            changeEl.style.color = changeColor;
+            kpiRow.style.display = '';
+        } else {
+            kpiRow.style.display = 'none';
+        }
     } catch(e) {
         console.error('Chart error:', e);
-        showToast('\u56fe\u8868\u52a0\u8f7d\u5931\u8d25', false);
+        showToast('图表加载失败', false);
     }
 }
 
-// 面板打开时初始化
 document.getElementById('chartPanel').addEventListener('shown.bs.collapse', function() {
     loadChartCategories();
     setDefaultMonths();
     setTimeout(function() { loadChart(); }, 300);
 });
 
-// 查询按钮
 document.getElementById('chartRefreshBtn').addEventListener('click', function() {
     loadChart();
 });</script>
