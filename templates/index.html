@@ -765,7 +765,7 @@ document.getElementById('catManageModal').addEventListener('show.bs.modal', func
 document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
     if (catMgmtChanged) location.reload();
 });
-// ====== 品类趋势分析（折线图，出库目的分色显示） ======
+// ====== 品类趋势分析 ======
 let trendChartInstance = null;
 
 async function loadChartCategories() {
@@ -821,37 +821,37 @@ async function loadChart() {
         const months = data.months || [];
         const series = data.series || {};
 
-        // 高区分度配色 + 线型方案
-        const lineConfigs = {
-            '在库': { color: '#28a745', dash: [], width: 3, label: '在库' }
+        // 配色: 在库=绿色粗线, 出库目的=高区分度色+虚线
+        const purposeColors = {
+            '在库': { color: '#28a745', borderWidth: 3, borderDash: [] }
         };
-        const colorPool = ['#e67e22', '#e74c3c', '#3498db', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50', '#c0392b'];
-        const dashPool = [[], [6,3], [2,4], [8,4,2,4], [4,4]];
-        let dashIdx = 0;
-        let colorIdx = 0;
+        const palette = ['#e67e22', '#e74c3c', '#3498db', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50', '#c0392b'];
+        const dashes = [[], [6,3], [2,4], [8,4,2,4], [4,4]];
+        var di = 0, ci = 0;
 
-        const datasets = [];
+        var datasets = [];
 
-        // 在库优先添加（作为第一项，粗线）
+        // 添加在库折线（始终排第一）
         if (series['在库'] && series['在库'].length > 0) {
             datasets.push({
                 label: '在库',
                 data: series['在库'],
                 borderColor: '#28a745',
-                backgroundColor: '#28a74515',
+                backgroundColor: 'rgba(40,167,69,0.08)',
                 pointBackgroundColor: '#28a745',
                 pointBorderColor: '#fff',
                 pointBorderWidth: 2,
                 pointRadius: 5,
                 pointHoverRadius: 7,
                 borderWidth: 3,
+                borderDash: [],
                 fill: false,
                 tension: 0.3,
-                order: 0
+                spanGaps: true
             });
         }
 
-        // 各出库目的（细线，不同颜色+虚线）
+        // 添加各出库目的折线
         Object.keys(series).forEach(function(key) {
             if (key === '在库') return;
             var vals = series[key];
@@ -860,13 +860,13 @@ async function loadChart() {
             for (var i = 0; i < vals.length; i++) { if (vals[i] > 0) { hasData = true; break; } }
             if (!hasData) return;
 
-            var c = colorPool[colorIdx % colorPool.length]; colorIdx++;
-            var d = dashPool[dashIdx % dashPool.length]; dashIdx++;
+            var c = palette[ci % palette.length]; ci++;
+            var d = dashes[di % dashes.length]; di++;
             datasets.push({
                 label: key,
                 data: vals,
                 borderColor: c,
-                backgroundColor: c + '15',
+                backgroundColor: 'rgba(0,0,0,0)',
                 pointBackgroundColor: c,
                 pointBorderColor: '#fff',
                 pointBorderWidth: 1.5,
@@ -876,10 +876,11 @@ async function loadChart() {
                 borderDash: d,
                 fill: false,
                 tension: 0.3,
-                order: 1
+                spanGaps: true
             });
         });
 
+        // 占位
         if (datasets.length === 0) {
             datasets.push({
                 label: '（暂无数据）',
@@ -895,19 +896,25 @@ async function loadChart() {
         if (trendChartInstance) trendChartInstance.destroy();
         trendChartInstance = new Chart(ctx, {
             type: 'line',
-            data: { labels: months, datasets: datasets },
+            data: {
+                labels: months,
+                datasets: datasets
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
+                spanGaps: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
                 plugins: {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            boxWidth: 20,
+                            boxWidth: 24,
+                            boxHeight: 4,
                             padding: 14,
-                            usePointStyle: true,
-                            pointStyle: 'line',
                             font: { size: 12 }
                         }
                     },
@@ -921,42 +928,31 @@ async function loadChart() {
                 },
                 scales: {
                     x: {
+                        type: 'category',
                         grid: { display: false },
                         ticks: {
-                            font: { size: 12, weight: 'bold' },
+                            font: { size: 12 },
                             color: '#333',
-                            autoSkip: false,
-                            maxRotation: 45,
-                            minRotation: 0
-                        },
-                        title: {
-                            display: true,
-                            text: '\u6708\u4efd',
-                            font: { size: 13, weight: 'bold' },
-                            color: '#555'
+                            autoSkip: false
                         }
                     },
                     y: {
                         beginAtZero: true,
-                        ticks: { stepSize: 1, font: { size: 12 } },
-                        grid: { color: 'rgba(0,0,0,0.07)' },
-                        title: {
-                            display: true,
-                            text: '\u6570\u91cf (\u4ef6)',
-                            font: { size: 13, weight: 'bold' },
-                            color: '#555'
-                        }
+                        ticks: {
+                            stepSize: 1,
+                            font: { size: 12 },
+                            color: '#333'
+                        },
+                        grid: { color: 'rgba(0,0,0,0.07)' }
                     }
                 }
             }
         });
 
-        // 更新 KPI 摘要
+        // KPI 摘要
         var kpiRow = document.getElementById('chartKpiRow');
         var stockVals = series['在库'] || [];
         if (months.length > 0 && stockVals.length > 0) {
-            var startStock = stockVals[0];
-            var endStock = stockVals[stockVals.length - 1];
             var totalOut = 0;
             for (var ki = 0; ki < datasets.length; ki++) {
                 if (datasets[ki].label !== '在库') {
@@ -965,18 +961,15 @@ async function loadChart() {
                     }
                 }
             }
-            var monthCount = months.length;
-            var avgOut = Math.round(totalOut / monthCount);
-            var change = endStock - startStock;
+            var change = stockVals[stockVals.length-1] - stockVals[0];
             var changeStr = (change >= 0 ? '+' : '') + change;
-            var changeColor = change >= 0 ? '#28a745' : '#dc3545';
-            document.getElementById('kpiStartStock').textContent = startStock;
-            document.getElementById('kpiEndStock').textContent = endStock;
+            document.getElementById('kpiStartStock').textContent = stockVals[0];
+            document.getElementById('kpiEndStock').textContent = stockVals[stockVals.length-1];
             document.getElementById('kpiTotalOut').textContent = totalOut;
-            document.getElementById('kpiAvgOut').textContent = avgOut;
-            var changeEl = document.getElementById('kpiStockChange');
-            changeEl.textContent = changeStr;
-            changeEl.style.color = changeColor;
+            document.getElementById('kpiAvgOut').textContent = Math.round(totalOut / months.length);
+            var el = document.getElementById('kpiStockChange');
+            el.textContent = changeStr;
+            el.style.color = change >= 0 ? '#28a745' : '#dc3545';
             kpiRow.style.display = '';
         } else {
             kpiRow.style.display = 'none';
