@@ -170,6 +170,29 @@
         </div>
     </div>
 
+    <!-- 图表折叠面板 -->
+    <div class="mb-3">
+        <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#chartPanel" onclick="loadChart()">
+            <i class="bi bi-graph-up"></i> 本月统计图表
+        </button>
+    </div>
+    <div class="collapse" id="chartPanel">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2"><i class="bi bi-bar-chart"></i> 各状态数量</h6>
+                        <canvas id="statusChart" height="200"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2"><i class="bi bi-graph-up"></i> 月度趋势（近12月）</h6>
+                        <canvas id="trendChart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SN 搜索 -->
     <form method="GET" class="mb-3">
         <div class="input-group" style="max-width:420px;">
@@ -482,6 +505,7 @@
 </div>
 
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 // 检测 bfcache 恢复时强制刷新，确保状态最新
 window.addEventListener('pageshow',function(e){if(e.persisted)location.reload();});
@@ -700,6 +724,54 @@ document.getElementById('catManageModal').addEventListener('show.bs.modal', func
 document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
     if (catMgmtChanged) location.reload();
 });
+</script>
+// ====== 图表 ======
+let chartLoaded = false;
+let statusChartInstance = null;
+let trendChartInstance = null;
+
+async function loadChart() {
+    if (chartLoaded) return;
+    chartLoaded = true;
+    try {
+        const resp = await fetch('/api/dashboard/stats');
+        const data = await resp.json();
+
+        const statusMap = data.status_counts || {};
+        const statusLabels = ['在库', '已出库', '售后中', '故障中', '寄修中'];
+        const statusValues = statusLabels.map(s => statusMap[s] || 0);
+        const statusColors = ['#28a745', '#ffc107', '#dc3545', '#fd7e14', '#ff6b6b'];
+
+        const ctx1 = document.getElementById('statusChart').getContext('2d');
+        if (statusChartInstance) statusChartInstance.destroy();
+        statusChartInstance = new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: statusLabels,
+                datasets: [{ data: statusValues, backgroundColor: statusColors, borderWidth: 0 }]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+
+        const months = (data.month_in || []).reverse();
+        const labels = months.map(m => m.month);
+        const inboundData = months.map(m => m.count);
+        const outMap = {};
+        (data.month_out || []).forEach(m => { outMap[m.month] = m.count; });
+        const outboundData = labels.map(l => outMap[l] || 0);
+
+        const ctx2 = document.getElementById('trendChart').getContext('2d');
+        if (trendChartInstance) trendChartInstance.destroy();
+        trendChartInstance = new Chart(ctx2, {
+            type: 'line',
+            data: { labels: labels, datasets: [
+                { label: '入库', data: inboundData, borderColor: '#28a745', fill: false, tension: 0.1 },
+                { label: '出库', data: outboundData, borderColor: '#dc3545', fill: false, tension: 0.1 }
+            ]},
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+    } catch(e) { console.error('Chart error:', e); }
+}
 </script>
 </body>
 </html>

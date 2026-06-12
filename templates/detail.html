@@ -76,21 +76,9 @@
                 <button class="btn btn-success btn-sm me-2" id="btnRestock" onclick="doRestock()">
                     <i class="bi bi-box-arrow-in-down"></i> 在库
                 </button>
-                <button class="btn btn-danger btn-sm me-2" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
-                    <i class="bi bi-tools"></i> 售后
-                </button>
-                <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#faultModal">
-                    <i class="bi bi-exclamation-triangle"></i> 故障
-                </button>
                 {% else %}
                 <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#outboundModal">
                     <i class="bi bi-truck"></i> 出库
-                </button>
-                <button class="btn btn-danger btn-sm me-2" data-bs-toggle="modal" data-bs-target="#aftersalesModal">
-                    <i class="bi bi-tools"></i> 售后
-                </button>
-                <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#faultModal">
-                    <i class="bi bi-exclamation-triangle"></i> 故障
                 </button>
                 {% endif %}
             </div>
@@ -320,6 +308,7 @@
             <option value="">-- 请选择 --</option>
             <option value="销售出库">销售出库</option>
             <option value="售后出库">售后出库</option>
+            <option value="故障出库">故障出库</option>
             <option value="测试出库">测试出库</option>
             <option value="其他出库">其他出库</option>
         </select>
@@ -356,6 +345,27 @@
     <!-- 测试原因（测试显示） -->
     <div id="outTestReason" style="display:none;">
         <div class="mb-2"><label class="form-label">测试原因 <span class="text-danger">*</span></label><textarea class="form-control" id="outPurposeDetailTest" rows="2" placeholder="请说明测试原因"></textarea></div>
+    </div>
+    <!-- 故障出库 -->
+    <div id="outFaultSection" style="display:none;">
+        <div class="mb-2"><label class="form-label">故障原因 <span class="text-danger">*</span></label>
+            <textarea class="form-control" id="outFaultReason" rows="2" placeholder="请描述故障原因"></textarea>
+        </div>
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="outFaultRepair" onchange="document.getElementById('outFaultRepairFields').style.display=this.checked?'':'none'">
+            <label class="form-check-label fw-bold" for="outFaultRepair">需要寄修</label>
+            <div class="form-text">寄修后物料发往供应商维修，标记为待寄回</div>
+        </div>
+        <div id="outFaultRepairFields" style="display:none;">
+            <div class="mb-2"><label class="form-label">供应商名称 <span class="text-danger">*</span></label>
+                <input class="form-control" id="outFaultSupplier" placeholder="寄修供应商名称"></div>
+            <div class="row g-2">
+                <div class="col-6"><label class="form-label">快递公司 <span class="text-danger">*</span></label>
+                    <input class="form-control" id="outFaultCourier"></div>
+                <div class="col-6"><label class="form-label">快递单号 <span class="text-danger">*</span></label>
+                    <input class="form-control" id="outFaultTracking"></div>
+            </div>
+        </div>
     </div>
     <!-- 其他原因（其他出库显示） -->
     <div id="outOtherReason" style="display:none;">
@@ -768,9 +778,10 @@ document.getElementById('editForm').addEventListener('submit',function(e){e.prev
 // 出库用途切换
 document.getElementById('outPurpose').addEventListener('change',function(){
     var p=this.value;
-    document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库'||p==='其他出库')?'':'none';
+    document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库'||p==='其他出库'||p==='故障出库')?'':'none';
     document.getElementById('outAfterSalesReason').style.display=(p==='售后出库')?'':'none';
     document.getElementById('outTestReason').style.display=(p==='测试出库')?'':'none';
+    document.getElementById('outFaultSection').style.display=(p==='故障出库')?'':'none';
     document.getElementById('outOtherReason').style.display=(p==='其他出库')?'':'none';
 });
 // 出库
@@ -779,6 +790,7 @@ document.getElementById('outForm').addEventListener('submit',function(e){e.preve
     if(!purpose){st('请选择出库用途',false);return;}
     var purpose_detail='';
     if(purpose==='售后出库') purpose_detail=document.getElementById('outPurposeDetailAS').value;
+    else if(purpose==='故障出库') purpose_detail='故障: '+document.getElementById('outFaultReason').value;
     else if(purpose==='测试出库') purpose_detail=document.getElementById('outPurposeDetailTest').value;
     else if(purpose==='其他出库') purpose_detail=document.getElementById('outPurposeDetailOther').value;
     var payload={purpose:purpose,purpose_detail:purpose_detail,courier_company:document.getElementById('outCourier').value,tracking_number:document.getElementById('outTracking').value,customer_name:document.getElementById('outCustomer').value,customer_contact:document.getElementById('outContact').value,customer_company:document.getElementById('outCompany').value,address:document.getElementById('outAddress').value,remarks:document.getElementById('outRemarks').value};
@@ -787,6 +799,21 @@ document.getElementById('outForm').addEventListener('submit',function(e){e.preve
         payload.return_sn=document.getElementById('outReturnSn').value.trim();
         payload.return_courier=document.getElementById('outReturnCourier').value.trim();
         payload.return_tracking=document.getElementById('outReturnTracking').value.trim();
+    }
+    // 故障出库：勾选寄修时标记待寄回并记录寄修信息
+    if(purpose==='故障出库'){
+        var faultReason=document.getElementById('outFaultReason').value.trim();
+        if(!faultReason){st('请填写故障原因',false);return;}
+        if(document.getElementById('outFaultRepair').checked){
+            var supplier=document.getElementById('outFaultSupplier').value.trim();
+            var courier=document.getElementById('outFaultCourier').value.trim();
+            var tracking=document.getElementById('outFaultTracking').value.trim();
+            if(!supplier||!courier||!tracking){st('寄修时供应商、快递公司、快递单号为必填',false);return;}
+            payload.return_status='待寄回';
+            payload.supplier=supplier;
+            payload.fault_courier=courier;
+            payload.fault_tracking=tracking;
+        }
     }
     post('/api/outbound/'+SN,payload,'outboundModal',document.getElementById('outBtn'));});
 // 在库

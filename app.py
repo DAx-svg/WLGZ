@@ -432,9 +432,15 @@ def index():
         return_map = {r['sn']: r['return_status'] for r in rows}
         materials = [dict(m) for m in materials]
         for m in materials:
-            m['latest_purpose'] = purpose_map.get(m['sn'], '')
-            m['latest_purpose_detail'] = detail_map.get(m['sn'], '')
-            m['latest_return_status'] = return_map.get(m['sn'], '')
+            # 已重新入库（在库状态）的物料不显示历史出库用途
+            if m['status'] == '在库':
+                m['latest_purpose'] = ''
+                m['latest_purpose_detail'] = ''
+                m['latest_return_status'] = ''
+            else:
+                m['latest_purpose'] = purpose_map.get(m['sn'], '')
+                m['latest_purpose_detail'] = detail_map.get(m['sn'], '')
+                m['latest_return_status'] = return_map.get(m['sn'], '')
 
     # 批量查询物料所属品类
     if materials:
@@ -1016,10 +1022,35 @@ def api_outbound(sn):
              data.get('customer_company', ''), data.get('address', ''),
              data.get('remarks', ''), return_status, return_sn,
              return_courier, return_tracking))
-        db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
-        db.commit()
-        log_operation('outbound', sn, f'出库（{data.get("purpose", "")}）')
-        return jsonify({'success': True, 'message': '出库操作完成'})
+
+        purpose = data.get('purpose', '')
+        if purpose == '故障出库' and data.get('supplier'):
+            # 寄修模式：创建故障记录 + 标记为寄修中
+            supplier = data.get('supplier', '')
+            fault_courier = data.get('fault_courier', '')
+            fault_tracking = data.get('fault_tracking', '')
+            db.execute(
+                "INSERT INTO fault_records (sn, created_time, fault_reason, status, "
+                "previous_status, repair_type, supplier) VALUES (?,?,?,?,?,?,?)",
+                (sn, now, data.get('purpose_detail', '').replace('故障: ', ''),
+                 '寄修中', mat['status'], '寄修', supplier))
+            db.execute(
+                "UPDATE outbound_records SET courier_company=?, tracking_number=? "
+                "WHERE sn=? AND outbound_time=? AND purpose='故障出库'",
+                (fault_courier, fault_tracking, sn, now))
+            db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
+            db.commit()
+            log_operation('fault_create', sn,
+                          f'故障出库寄修至 {supplier}，故障原因: {data.get("purpose_detail", "")}')
+            log_operation('outbound', sn, f'故障出库寄修至 {supplier}')
+            return jsonify({'success': True,
+                            'message': f'{sn} 已故障出库至 {supplier}（寄修中，待寄回）'})
+        else:
+            # 普通出库
+            db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
+            db.commit()
+            log_operation('outbound', sn, f'出库（{purpose}）')
+            return jsonify({'success': True, 'message': '出库操作完成'})
     except Exception:
         db.rollback()
         raise
