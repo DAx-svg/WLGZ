@@ -25,10 +25,10 @@ DATABASE = os.path.join(DATA_DIR, 'material.db')
 
 
 def validate_sn(sn):
-    """Validate SN format: 1-100 chars, alphanumeric + hyphens/underscores/dots only"""
+    """Validate SN format: 1-100 chars, alphanumeric + hyphens/underscores/dots/colons"""
     if not sn or len(sn) > 100:
         return False
-    return bool(re.match(r'^[A-Za-z0-9\-_\.]+$', sn))
+    return bool(re.match(r'^[A-Za-z0-9\-_\.:：]+$', sn))
 
 
 def escape_like(s):
