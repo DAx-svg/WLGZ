@@ -1296,6 +1296,14 @@ def api_fault_resolve(record_id):
     data = request.get_json(force=True)
     now = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
+    # 同步更新出库记录：标记该故障关联的出库记录为已寄回
+    ob = db.execute(
+        "SELECT id FROM outbound_records WHERE sn=? AND purpose=? ORDER BY outbound_time DESC LIMIT 1",
+        (record['sn'], '故障出库')).fetchone()
+    if ob:
+        db.execute(
+            "UPDATE outbound_records SET return_status='已寄回', return_courier=?, return_tracking=? WHERE id=?",
+            (data.get('return_courier', '').strip(), data.get('return_tracking', '').strip(), ob['id']))
     is_repair = record['repair_type'] == '寄修'
     if is_repair:
         return_courier = data.get('return_courier', '').strip()

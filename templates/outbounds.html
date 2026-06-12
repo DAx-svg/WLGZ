@@ -64,7 +64,7 @@
                             </td>
                             <td>
                                 {% if o.purpose %}
-                                <span class="badge bg-info text-dark">{{ o.purpose }}</span>
+                                <span class="badge bg-info text-dark">{% if o.purpose == '售后出库' %}待寄回故障件{% else %}{{ o.purpose }}{% endif %}</span>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}

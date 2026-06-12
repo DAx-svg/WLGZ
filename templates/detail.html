@@ -165,9 +165,9 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>寄回</th><th>备注</th><th style="width:80px;"></th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>待寄回故障件</th><th>备注</th><th style="width:80px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
-                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% if o.purpose_detail %}<div class="fw-bold text-dark mt-1">{{ o.purpose_detail }}</div>{% endif %}{% else %}-{% endif %}</td>
+                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{% if o.purpose == '售后出库' %}待寄回故障件{% else %}{{ o.purpose }}{% endif %}</span>{% if o.purpose_detail %}<div class="fw-bold text-dark mt-1">{{ o.purpose_detail }}</div>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-nowrap">{{ o.outbound_time }}</td>
                     <td>{{ o.customer_name or '-' }}</td>
                     <td>{{ o.customer_company or '-' }}</td>
@@ -465,16 +465,7 @@
         <label class="form-label">备注</label>
         <textarea class="form-control" id="obEditRemarks" rows="2"></textarea>
     </div>
-    <!-- 寄回信息（编辑） -->
-    <hr>
-    <div class="mb-2"><label class="form-label">寄回状态</label>
-        <select class="form-select" id="obEditReturnStatus">
-            <option value="无需寄回">无需寄回</option>
-            <option value="待寄回">待寄回</option>
-            <option value="已寄回">已寄回</option>
-        </select>
-    </div>
-    <div id="obEditReturnFields">
+        <div id="obEditReturnFields">
         <div class="mb-2"><label class="form-label">客户寄回故障件 SN</label><input class="form-control" id="obEditReturnSn" style="font-family:monospace;"></div>
         <div class="row g-2 mb-2">
             <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="obEditReturnCourier"></div>
@@ -505,6 +496,18 @@
         </div>
     </div>
 </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-warning" id="faultBtn" type="submit">标记故障</button></div>
+</form></div></div></div>
+
+<!-- ====== 寄回状态信息框 ====== -->
+<div class="modal fade" id="returnStatusModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content">
+<div class="modal-header bg-warning text-dark"><h6 class="modal-title">标记寄回 - 填写寄回信息</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+<form id="returnStatusForm"><div class="modal-body">
+    <div class="mb-2"><label class="form-label">寄回故障件 SN</label><input class="form-control" id="returnSnInput" style="font-family:monospace;"></div>
+    <div class="row g-2 mb-2">
+        <div class="col-6"><label class="form-label">快递公司</label><input class="form-control" id="returnCourierInput"></div>
+        <div class="col-6"><label class="form-label">快递单号</label><input class="form-control" id="returnTrackingInput"></div>
+    </div>
+</div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-warning" type="submit">确认寄回</button></div>
 </form></div></div></div>
 
 <!-- ====== 修复故障弹窗 ====== -->
@@ -845,13 +848,14 @@ function deleteOutbound(id){
 }
 // 标记寄回完成
 function markReturned(id){
-    if(!confirm('确认客户已将故障件寄回？\n\n如有故障件 SN 和快递信息，请通过"编辑"按钮填写。'))return;
-    fetch('/api/outbound/'+id+'/return',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+    document.getElementById('returnSnInput').value='';document.getElementById('returnCourierInput').value='';document.getElementById('returnTrackingInput').value='';
+    document.getElementById('returnStatusForm').onsubmit=function(e){e.preventDefault();
+        fetch('/api/outbound/'+id+'/return',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({return_sn:document.getElementById('returnSnInput').value.trim(),return_courier:document.getElementById('returnCourierInput').value.trim(),return_tracking:document.getElementById('returnTrackingInput').value.trim()})})
         .then(function(r){return r.json();})
-        .then(function(d){st(d.message,d.success);if(d.success)reload();})
-        .catch(function(){st('网络错误',false);});
+        .then(function(d){st(d.message,d.success);if(d.success){try{var m=bootstrap.Modal.getInstance(document.getElementById('returnStatusModal'));m&&m.hide();}catch(e){}reload();}})
+        .catch(function(){st('网络错误',false);});};
+    new bootstrap.Modal(document.getElementById('returnStatusModal')).show();
 }
-// 编辑出库记录
 function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,customer_name,customer_contact,customer_company,address,remarks,return_status,return_sn,return_courier,return_tracking){
     document.getElementById('obEditId').value=id;
     document.getElementById('obEditPurpose').value=purpose;
@@ -895,7 +899,7 @@ document.getElementById('editOutboundForm').addEventListener('submit',function(e
         }).catch(function(){st('网络错误',false);btn.disabled=false;btn.innerHTML='保存修改';});
 });
 // 编辑弹窗中寄回状态切换
-document.getElementById('obEditReturnStatus').addEventListener('change',function(){
+
     document.getElementById('obEditReturnFields').style.display=this.value==='无需寄回'?'none':'';
 });
 // 故障
