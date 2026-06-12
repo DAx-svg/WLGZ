@@ -2132,8 +2132,8 @@ def api_category_trend():
         key = (r['month'], r['purpose'])
         outbound_by_month_purpose[key] = r['cnt']
 
-    purpose_order = ['已出库', '售后中', '故障中', '寄修中']
-    tracked_purposes = [p for p in purpose_order if p in purposes]
+    purpose_order = sorted([p for p in purposes if p])
+    # directly use all outbound purposes from data
 
     in_stock_by_month = {}
     for m in all_months:
@@ -2147,13 +2147,13 @@ def api_category_trend():
 
     series = {}
     series['在库'] = [in_stock_by_month.get(m, 0) for m in all_months]
-    for p in tracked_purposes:
+    for p in purpose_order:
         series[p] = [outbound_by_month_purpose.get((m, p), 0) for m in all_months]
 
     return jsonify({
         'months': all_months,
         'series': series,
-        'purposes': tracked_purposes,
+        'purposes': purpose_order,
     })
 
 

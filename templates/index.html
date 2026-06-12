@@ -786,33 +786,39 @@ async function loadChart() {
         const series = data.series || {};
 
         const colorMap = {
-            '\u5728\u5e93': { color: '#28a745', label: '\u5728\u5e93' },
-            '\u5df2\u51fa\u5e93': { color: '#e6a817', label: '\u5df2\u51fa\u5e93' },
-            '\u552e\u540e\u4e2d': { color: '#dc3545', label: '\u552e\u540e\u4e2d' },
-            '\u6545\u969c\u4e2d': { color: '#fd7e14', label: '\u6545\u969c\u4e2d' },
-            '\u5bc4\u4fee\u4e2d': { color: '#ff6b6b', label: '\u5bc4\u4fee\u4e2d' }
+            '\u5728\u5e93': { color: '#28a745', label: '\u5728\u5e93' }
         };
-        const order = ['\u5728\u5e93', '\u5df2\u51fa\u5e93', '\u552e\u540e\u4e2d', '\u6545\u969c\u4e2d', '\u5bc4\u4fee\u4e2d'];
-
+        const defaultColors = ['#28a745', '#e6a817', '#dc3545', '#fd7e14', '#ff6b6b', '#6f42c1', '#17a2b8', '#6610f2', '#e83e8c', '#20c997'];
+        var colorIdx = 1;
+        const allKeys = Object.keys(series);
         const datasets = [];
-        order.forEach(function(key) {
+        allKeys.forEach(function(key) {
             const values = series[key];
-            if (values && values.some(function(v) { return v > 0; })) {
-                const cfg = colorMap[key] || { color: '#6f42c1', label: key };
-                datasets.push({
-                    label: cfg.label,
-                    data: values,
-                    borderColor: cfg.color,
-                    backgroundColor: cfg.color + '20',
-                    fill: false,
-                    tension: 0.2,
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                });
+            if (!values || !Array.isArray(values)) return;
+            var hasData = false;
+            for (var idx = 0; idx < values.length; idx++) {
+                if (values[idx] > 0) { hasData = true; break; }
             }
+            if (!hasData) return;
+            var cfg = colorMap[key];
+            if (!cfg) {
+                var c = defaultColors[colorIdx % defaultColors.length];
+                colorIdx++;
+                cfg = { color: c, label: key };
+                colorMap[key] = cfg;
+            }
+            datasets.push({
+                label: cfg.label,
+                data: values,
+                borderColor: cfg.color,
+                backgroundColor: cfg.color + '20',
+                fill: false,
+                tension: 0.2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            });
         });
-
-        if (datasets.length === 0) {
+if (datasets.length === 0) {
             datasets.push({
                 label: '\uff08\u6682\u65e0\u6570\u636e\uff09',
                 data: months.map(function() { return 0; }),
