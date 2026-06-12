@@ -544,23 +544,72 @@ function refreshList() {
     }).join('');
 }
 
+// ====== localStorage 持久化 ======
+function saveBatchState() {
+    try {
+        var state = {
+            selected: selected,
+            parentId: document.getElementById('parentSelect').value,
+            subId: document.getElementById('subSelect').value
+        };
+        localStorage.setItem('batchOutboundState', JSON.stringify(state));
+    } catch(e) {}
+}
+
+function loadBatchState() {
+    try {
+        var raw = localStorage.getItem('batchOutboundState');
+        if (!raw) return;
+        var state = JSON.parse(raw);
+        if (state.selected) {
+            Object.keys(state.selected).forEach(function(sn) {
+                selected[sn] = state.selected[sn];
+            });
+        }
+        refreshList();
+        if (state.parentId) {
+            document.getElementById('parentSelect').value = state.parentId;
+            onParentChange();
+            if (state.subId) {
+                setTimeout(function(){
+                    document.getElementById('subSelect').value = state.subId;
+                    onSubChange();
+                }, 100);
+            }
+        }
+    } catch(e) {}
+}
+
+// Auto-save on every change
+document.querySelectorAll('#batchForm input, #batchForm select, #batchForm textarea').forEach(function(el){
+    el.addEventListener('change', saveBatchState);
+    el.addEventListener('input', saveBatchState);
+});
+saveBatchState();
+setInterval(saveBatchState, 5000);
+window.addEventListener('beforeunload', saveBatchState);
+
+// Load on page open
+loadBatchState();
+
 // ====== 用途联动 ======
 document.getElementById('purpose').addEventListener('change', function(){
     var box = document.getElementById('purposeDetailBox');
     var label = document.getElementById('purposeDetailLabel');
     var retGroup = document.getElementById('returnCheckGroup');
+    var faultGroup = document.getElementById('faultRepairGroup');
     var v = this.value;
-    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; retGroup.style.display='none'; }
-    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; retGroup.style.display=''; }
-    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; retGroup.style.display='none'; }
-    else if (v === '故障出库') { box.style.display='block'; label.textContent='故障原因'; retGroup.style.display='none'; document.getElementById('faultRepairGroup').style.display=''; } else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; retGroup.style.display='none'; }
-    else { box.style.display='none'; retGroup.style.display='none'; }
+    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; retGroup.style.display=''; faultGroup.style.display='none'; }
+    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    else if (v === '故障出库') { box.style.display='block'; label.textContent='故障原因'; retGroup.style.display='none'; faultGroup.style.display=''; }
+    else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    else { box.style.display='none'; retGroup.style.display='none'; faultGroup.style.display='none'; }
 });
 
 // ====== 提交 ======
 document.getElementById('batchForm').addEventListener('submit', function(e){
     e.preventDefault();
-    // 筛选在库的
     var okSns = Object.keys(selected).filter(function(sn){ return selected[sn] === '在库'; });
     if (okSns.length === 0) {
         st('所选物料均不在库，无法出库', false);
@@ -604,11 +653,6 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         payload.fault_courier=courier;
         payload.fault_tracking=tracking;
     }
-        payload.return_status='待寄回';
-        payload.return_sn=document.getElementById('returnSn').value.trim();
-        payload.return_courier=document.getElementById('returnCourier').value.trim();
-        payload.return_tracking=document.getElementById('returnTracking').value.trim();
-    }
 
     fetch('/api/outbound/batch', {
         method: 'POST',
@@ -620,6 +664,9 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
             selected = {};
             document.getElementById('batchForm').reset();
             document.getElementById('purposeDetailBox').style.display = 'none';
+            document.getElementById('returnCheckGroup').style.display = 'none';
+            document.getElementById('faultRepairGroup').style.display = 'none';
+            localStorage.removeItem('batchOutboundState');
         }
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';
@@ -632,56 +679,8 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
 });
 
 // ====== 智能返回 ======
-// ====== localStorage 持久化 ======
-function saveBatchState() {
-    try {
-        var state = {
-            selected: selected,
-            parentId: document.getElementById('parentSelect').value,
-            subId: document.getElementById('subSelect').value
-        };
-        localStorage.setItem('batchOutboundState', JSON.stringify(state));
-    } catch(e) {}
-}
-
-function loadBatchState() {
-    try {
-        var raw = localStorage.getItem('batchOutboundState');
-        if (!raw) return;
-        var state = JSON.parse(raw);
-        if (state.selected) {
-            Object.keys(state.selected).forEach(function(sn) {
-                selected[sn] = state.selected[sn];
-            });
-        }
-        refreshList();
-        if (state.parentId) {
-            document.getElementById('parentSelect').value = state.parentId;
-            onParentChange();
-            if (state.subId) {
-                setTimeout(function(){
-                    document.getElementById('subSelect').value = state.subId;
-                    onSubChange();
-                }, 100);
-            }
-        }
-    } catch(e) {}
-}
-
-// Auto-save on every change
-document.querySelectorAll('#batchForm input, #batchForm select, #batchForm textarea').forEach(function(el){
-    el.addEventListener('change', saveBatchState);
-    el.addEventListener('input', saveBatchState);
-});
-setInterval(saveBatchState, 5000);
-window.addEventListener('beforeunload', saveBatchState);
-
-// Load on page open
-loadBatchState();
-
-// ====== 用途联动 ======
+document.getElementById('backBtn').addEventListener('click', function(e){
     try{var r=new URL(document.referrer);if(r.host===location.host&&r.pathname!==location.pathname){e.preventDefault();history.back();}}catch(e){}
-});
-</script>
+});</script>
 </body>
 </html>
