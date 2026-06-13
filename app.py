@@ -40,7 +40,7 @@ def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DATABASE)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=DELETE")  # 不用WAL，NFS不兼容
+        g.db.execute("PRAGMA journal_mode=WAL")  # WAL 避免写锁阻塞，单 worker 安全
         g.db.execute("PRAGMA busy_timeout=5000")
         g.db.execute("PRAGMA foreign_keys=ON")
     return g.db
