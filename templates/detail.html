@@ -465,6 +465,14 @@
         <label class="form-label">备注</label>
         <textarea class="form-control" id="obEditRemarks" rows="2"></textarea>
     </div>
+        <div class="mb-2">
+            <label class="form-label">寄回状态</label>
+            <select class="form-select" id="obEditReturnStatus" onchange="document.getElementById('obEditReturnFields').style.display=this.value==='无需寄回'?'none':''">
+                <option value="无需寄回">无需寄回</option>
+                <option value="待寄回">待寄回</option>
+                <option value="已寄回">已寄回</option>
+            </select>
+        </div>
         <div id="obEditReturnFields">
         <div class="mb-2"><label class="form-label">客户寄回故障件 SN</label><input class="form-control" id="obEditReturnSn" style="font-family:monospace;"></div>
         <div class="row g-2 mb-2">
@@ -896,10 +904,6 @@ document.getElementById('editOutboundForm').addEventListener('submit',function(e
             if(d.success){bootstrap.Modal.getInstance(document.getElementById('editOutboundModal')).hide();reload();}
             btn.disabled=false;btn.innerHTML='保存修改';
         }).catch(function(){st('网络错误',false);btn.disabled=false;btn.innerHTML='保存修改';});
-});
-// 编辑弹窗中寄回状态切换
-
-    document.getElementById('obEditReturnFields').style.display=this.value==='无需寄回'?'none':'';
 });
 // 故障
 document.getElementById('faultForm').addEventListener('submit',function(e){e.preventDefault();
