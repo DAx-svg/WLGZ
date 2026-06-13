@@ -1,4 +1,4 @@
-﻿"""
+"""
 物料全流程追溯系统 v2.0
 ====================
 基于 Flask + SQLite 的公司内部物料追溯管理系统。
@@ -2064,10 +2064,10 @@ def api_category_trend():
     cat_clause = ''
     cat_params = []
     if sub_id:
-        cat_clause = 'AND m.category_id = ?'
+        cat_clause = ' AND m.category_id = ?'
         cat_params.append(sub_id)
     elif parent_id:
-        cat_clause = 'AND m.category_id IN (SELECT id FROM categories WHERE parent_id = ?)'
+        cat_clause = ' AND m.category_id IN (SELECT id FROM categories WHERE parent_id = ?)'
         cat_params.append(parent_id)
 
     # 月份条件
