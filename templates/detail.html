@@ -304,7 +304,7 @@
 <div class="modal-header bg-warning"><h5 class="modal-title">出库 - {{ material.sn }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
 <form id="outForm"><div class="modal-body">
     <div class="mb-3"><label class="form-label">出库用途 <span class="text-danger">*</span></label>
-        <select class="form-select" id="outPurpose" required>
+        <select class="form-select" id="outPurpose" required onchange="onOutPurposeChange(this.value)">
             <option value="">-- 请选择 --</option>
             <option value="销售出库">销售出库</option>
             <option value="售后出库">售后出库</option>
@@ -779,14 +779,13 @@ document.getElementById('editForm').addEventListener('submit',function(e){e.prev
     .finally(function(){btn.disabled=false;btn.innerHTML='保存';});
 });
 // 出库用途切换
-document.getElementById('outPurpose').addEventListener('change',function(){
-    var p=this.value;
+function onOutPurposeChange(p){
     document.getElementById('outCustomerGroup').style.display=(p==='销售出库'||p==='售后出库'||p==='其他出库'||p==='故障出库')?'':'none';
     document.getElementById('outAfterSalesReason').style.display=(p==='售后出库')?'':'none';
     document.getElementById('outTestReason').style.display=(p==='测试出库')?'':'none';
     document.getElementById('outFaultSection').style.display=(p==='故障出库')?'':'none';
     document.getElementById('outOtherReason').style.display=(p==='其他出库')?'':'none';
-});
+}
 // 出库
 document.getElementById('outForm').addEventListener('submit',function(e){e.preventDefault();
     var purpose=document.getElementById('outPurpose').value;
