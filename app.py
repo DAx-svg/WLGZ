@@ -62,7 +62,16 @@ def add_no_cache(response):
 
 
 def init_db():
+    # 启动时清理残留锁文件（DELETE 模式崩溃遗留）
+    import glob as _glob
+    for _lock in _glob.glob(DATABASE + '-*'):
+        try:
+            os.remove(_lock)
+        except Exception:
+            pass
     db = get_db()
+    # 确保 WAL 模式生效
+    db.execute("PRAGMA journal_mode=WAL")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS categories (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
