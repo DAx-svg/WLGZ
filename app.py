@@ -1612,6 +1612,13 @@ def api_outbound_batch():
     return_courier = data.get('return_courier', '')
     return_tracking = data.get('return_tracking', '')
 
+    # 寄修模式（仅故障出库支持）
+    is_repair = purpose == '故障出库' and data.get('supplier')
+    supplier = data.get('supplier', '')
+    fault_courier = data.get('fault_courier', '')
+    fault_tracking = data.get('fault_tracking', '')
+
+    db.execute("BEGIN IMMEDIATE")
     try:
         for sn in sns:
             db.execute(
@@ -1623,14 +1630,30 @@ def api_outbound_batch():
                 (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
                  company, address, remarks, return_status, return_sn,
                  return_courier, return_tracking))
-            db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
+            if is_repair:
+                db.execute(
+                    "UPDATE outbound_records SET courier_company=?, tracking_number=? "
+                    "WHERE sn=? AND outbound_time=? AND purpose='故障出库'",
+                    (fault_courier, fault_tracking, sn, now))
+                db.execute(
+                    "INSERT INTO fault_records (sn, created_time, fault_reason, status, "
+                    "previous_status, repair_type, supplier) VALUES (?,?,?,?,?,?,?)",
+                    (sn, now, purpose_detail.replace('故障: ', ''),
+                     '寄修中', '在库', '寄修', supplier))
+                db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
+            else:
+                db.execute("UPDATE materials SET status='已出库' WHERE sn=?", (sn,))
         db.commit()
     except Exception as e:
         db.execute("ROLLBACK")
         return jsonify({'success': False, 'message': f'批量出库失败，已回滚：{str(e)}'}), 500
     for sn in sns:
-        log_operation('outbound', sn, f'批量出库（{purpose}）')
-    return jsonify({'success': True, 'message': f'已批量出库 {len(sns)} 个物料'})
+        log_operation('outbound', sn,
+                      f'批量出库（{purpose}{"寄修至" + supplier if is_repair else ""}）')
+    msg = f'已批量出库 {len(sns)} 个物料'
+    if is_repair:
+        msg += f'（寄修中，供应商：{supplier}）'
+    return jsonify({'success': True, 'message': msg})
 
 
 # ==========================================================================
