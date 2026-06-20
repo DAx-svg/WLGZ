@@ -1,4 +1,7 @@
 __pycache__/
 *.pyc
 *.db
+*.db.*
+sync_state.json
+*.xlsx
 .DS_Store

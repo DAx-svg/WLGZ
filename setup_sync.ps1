@@ -1,8 +1,5 @@
-$pythonPath = 'C:\Users\1\AppData\Local\Python\pythoncore-3.14-64\python.exe'
-$scriptPath = 'C:\Users\1\material-tracking\sync_db.py'
-
-$action = New-ScheduledTaskAction -Execute $pythonPath -Argument $scriptPath
+$action = New-ScheduledTaskAction -Execute 'C:\Users\1\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe' -Argument 'D:\板卡物料追溯系统\sync_db.py'
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 30)
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -WakeToRun -Hidden
 Register-ScheduledTask -TaskName 'WlgzSyncDB' -Action $action -Trigger $trigger -Settings $settings -Description 'WLGZ DB Sync' -Force
-Write-Host "OK - Task installed"
+Write-Host "OK - Hidden mode"

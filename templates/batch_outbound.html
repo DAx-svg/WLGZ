@@ -140,12 +140,7 @@
                                 <div id="batchFaultFields" style="display:none;">
                                     <div class="mb-2"><label class="form-label">供应商名称 <span class="text-danger">*</span></label>
                                         <input class="form-control" id="batchFaultSupplier" placeholder="寄修供应商名称"></div>
-                                    <div class="row g-2">
-                                        <div class="col-6"><label class="form-label">快递公司 <span class="text-danger">*</span></label>
-                                            <input class="form-control" id="batchFaultCourier"></div>
-                                        <div class="col-6"><label class="form-label">快递单号 <span class="text-danger">*</span></label>
-                                            <input class="form-control" id="batchFaultTracking"></div>
-                                    </div>
+                                    <div class="form-text">寄出快递信息请使用下方公用快递公司/快递单号</div>
                                 </div>
                             </div>
                         </div>
@@ -216,7 +211,8 @@ const CAT_DATA = {
 };
 
 // ====== 状态管理 ======
-let selected = {};  // {sn: status}
+let selected = {};       // {sn: status}
+let faultDetails = {};   // {sn: fault_reason} — 每个SN独立的故障原因
 
 // ====== Toast ======
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
@@ -503,6 +499,7 @@ function addSn(sn, status) {
 
 function removeSn(sn) {
     delete selected[sn];
+    delete faultDetails[sn];
     refreshList();
     // 刷新品类点选区
     var cid = document.getElementById('subSelect').value;
@@ -511,6 +508,7 @@ function removeSn(sn) {
 
 function clearAll() {
     selected = {};
+    faultDetails = {};
     refreshList();
     var cid = document.getElementById('subSelect').value;
     if (cid) loadInStock(cid);
@@ -520,6 +518,7 @@ function refreshList() {
     var container = document.getElementById('selectedList');
     var sns = Object.keys(selected);
     var count = sns.length;
+    var purpose = document.getElementById('purpose').value;
     document.getElementById('countBadge').textContent = count;
     document.getElementById('clearAllBtn').disabled = count === 0;
     document.getElementById('submitBtn').disabled = count === 0;
@@ -533,15 +532,40 @@ function refreshList() {
         return;
     }
 
-    container.innerHTML = sns.map(function(sn){
-        var st = selected[sn];
-        var ok = st === '在库';
-        var cls = ok ? 'sn-chip' : 'sn-chip not-ok';
-        var tip = ok ? '在库，可出库' : '状态: '+st+' (出库时将跳过)';
-        return '<span class="'+cls+'" title="'+tip+'">'+sn
-            + (ok ? '' : ' <small>('+st+')</small>')
-            + '<span class="remove" onclick="removeSn(\''+sn+'\')">&times;</span></span>';
-    }).join('');
+    if (purpose === '故障出库') {
+        // 故障出库：每个 SN 带独立故障原因输入框
+        container.innerHTML = sns.map(function(sn){
+            var st = selected[sn];
+            var ok = st === '在库';
+            var reasonVal = (faultDetails[sn] || '').replace(/"/g, '&quot;');
+            var rowCls = ok ? '' : ' style="opacity:0.5;"';
+            return '<div class="d-flex align-items-start gap-2 mb-2 pb-2 border-bottom"'+rowCls+'>'
+                + '<div style="min-width:160px;flex-shrink:0;">'
+                + '<span class="sn-chip'+(ok?'':' not-ok')+'" style="margin:0;">'+sn
+                + (ok ? '' : ' <small>('+st+')</small>')
+                + '<span class="remove" onclick="removeSn(\''+sn+'\')">&times;</span></span>'
+                + '</div>'
+                + '<div style="flex:1;min-width:200px;">'
+                + '<input class="form-control form-control-sm fault-reason-input"'
+                + ' style="font-size:0.85rem;"'
+                + ' placeholder="该SN故障原因"'
+                + ' value="' + reasonVal + '"'
+                + ' onchange="faultDetails[\''+sn+'\']=this.value;saveBatchState()"'
+                + ' oninput="faultDetails[\''+sn+'\']=this.value">'
+                + '</div></div>';
+        }).join('');
+    } else {
+        // 非故障出库：简洁 chip 列表
+        container.innerHTML = sns.map(function(sn){
+            var st = selected[sn];
+            var ok = st === '在库';
+            var cls = ok ? 'sn-chip' : 'sn-chip not-ok';
+            var tip = ok ? '在库，可出库' : '状态: '+st+' (出库时将跳过)';
+            return '<span class="'+cls+'" title="'+tip+'">'+sn
+                + (ok ? '' : ' <small>('+st+')</small>')
+                + '<span class="remove" onclick="removeSn(\''+sn+'\')">&times;</span></span>';
+        }).join('');
+    }
 }
 
 // ====== localStorage 持久化 ======
@@ -549,6 +573,7 @@ function saveBatchState() {
     try {
         var state = {
             selected: selected,
+            faultDetails: faultDetails,
             parentId: document.getElementById('parentSelect').value,
             subId: document.getElementById('subSelect').value
         };
@@ -564,6 +589,11 @@ function loadBatchState() {
         if (state.selected) {
             Object.keys(state.selected).forEach(function(sn) {
                 selected[sn] = state.selected[sn];
+            });
+        }
+        if (state.faultDetails) {
+            Object.keys(state.faultDetails).forEach(function(sn) {
+                faultDetails[sn] = state.faultDetails[sn];
             });
         }
         refreshList();
@@ -598,13 +628,15 @@ document.getElementById('purpose').addEventListener('change', function(){
     var label = document.getElementById('purposeDetailLabel');
     var retGroup = document.getElementById('returnCheckGroup');
     var faultGroup = document.getElementById('faultRepairGroup');
+    var purposeDetailInput = document.getElementById('purposeDetail');
     var v = this.value;
-    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; retGroup.style.display='none'; faultGroup.style.display='none'; }
-    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; retGroup.style.display=''; faultGroup.style.display='none'; }
-    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; retGroup.style.display='none'; faultGroup.style.display='none'; }
-    else if (v === '故障出库') { box.style.display='block'; label.textContent='故障原因'; retGroup.style.display='none'; faultGroup.style.display=''; }
-    else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    if (v === '销售出库') { box.style.display='block'; label.textContent='客户信息/销售备注'; purposeDetailInput.style.display=''; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    else if (v === '售后出库') { box.style.display='block'; label.textContent='售后原因'; purposeDetailInput.style.display=''; retGroup.style.display=''; faultGroup.style.display='none'; }
+    else if (v === '测试出库') { box.style.display='block'; label.textContent='测试原因'; purposeDetailInput.style.display=''; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    else if (v === '故障出库') { box.style.display='block'; label.textContent='寄修设置（每个SN的故障原因请在左侧物料列表中单独填写）'; purposeDetailInput.style.display='none'; retGroup.style.display='none'; faultGroup.style.display=''; }
+    else if (v === '其他出库') { box.style.display='block'; label.textContent='出库说明'; purposeDetailInput.style.display=''; retGroup.style.display='none'; faultGroup.style.display='none'; }
     else { box.style.display='none'; retGroup.style.display='none'; faultGroup.style.display='none'; }
+    refreshList();  // 切换用途时重新渲染左侧列表（故障出库需显示/隐藏每SN输入框）
 });
 
 // ====== 提交 ======
@@ -637,6 +669,17 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         tracking_number: document.getElementById('trackingNumber').value.trim(),
         remarks: document.getElementById('remarks').value.trim()
     };
+    if(payload.purpose==='故障出库'){
+        // 每个SN独立的故障原因
+        payload.fault_details = {};
+        var hasEmpty = false;
+        okSns.forEach(function(sn){
+            var reason = (faultDetails[sn] || '').trim();
+            if(!reason) hasEmpty = true;
+            payload.fault_details[sn] = reason;
+        });
+        if(hasEmpty && !confirm('部分SN未填写故障原因，确定继续提交？')){ btn.disabled=false; btn.innerHTML='<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>'; return; }
+    }
     if(payload.purpose==='售后出库' && document.getElementById('needReturn').checked){
         payload.return_status='待寄回';
         payload.return_sn=document.getElementById('returnSn').value.trim();
@@ -645,13 +688,9 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
     }
     if(payload.purpose==='故障出库' && document.getElementById('batchFaultRepair').checked){
         var supplier=document.getElementById('batchFaultSupplier').value.trim();
-        var courier=document.getElementById('batchFaultCourier').value.trim();
-        var tracking=document.getElementById('batchFaultTracking').value.trim();
-        if(!supplier||!courier||!tracking){st('寄修时供应商、快递公司、快递单号为必填',false);btn.disabled=false;btn.innerHTML='<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';return;}
+        if(!supplier){st('寄修时供应商名称为必填',false);btn.disabled=false;btn.innerHTML='<i class="bi bi-box-arrow-right"></i> <span id="submitText">请先选择物料</span>';return;}
         payload.return_status='待寄回';
         payload.supplier=supplier;
-        payload.fault_courier=courier;
-        payload.fault_tracking=tracking;
     }
 
     fetch('/api/outbound/batch', {
@@ -662,6 +701,7 @@ document.getElementById('batchForm').addEventListener('submit', function(e){
         st(d.message, d.success);
         if (d.success) {
             selected = {};
+            faultDetails = {};
             document.getElementById('batchForm').reset();
             document.getElementById('purposeDetailBox').style.display = 'none';
             document.getElementById('returnCheckGroup').style.display = 'none';

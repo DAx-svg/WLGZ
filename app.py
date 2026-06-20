@@ -358,6 +358,8 @@ def index():
 
     filter_status = request.args.get('status', '').strip()
     filter_return = request.args.get('returning', '').strip()
+    filter_purpose = request.args.get('purpose', '').strip()
+    filter_ret_status = request.args.get('return_status', '').strip()
     show_month_in = request.args.get('month_in', '').strip()
     show_month_out = request.args.get('month_out', '').strip()
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
@@ -402,26 +404,44 @@ def index():
             (f'{this_month}%',)
         ).fetchall()
     else:
-        # 组合筛选：status + category/parent/orphan 可自由组合
+        # 组合筛选：status + category + purpose + return_status 可自由组合
         conditions = []
         params = []
+        needs_join = bool(filter_purpose or filter_return)
+        t = 'm.' if needs_join else ''
         if filter_status:
-            conditions.append('status = ?')
+            conditions.append(f'{t}status = ?')
             params.append(filter_status)
         if sub_cat_id:
-            conditions.append('category_id = ?')
+            conditions.append(f'{t}category_id = ?')
             params.append(sub_cat_id)
         elif parent_id:
-            conditions.append('category_id IN (SELECT id FROM categories WHERE parent_id = ?)')
+            conditions.append(f'{t}category_id IN (SELECT id FROM categories WHERE parent_id = ?)')
             params.append(parent_id)
         elif show_orphan:
-            conditions.append('category_id IS NULL')
+            conditions.append(f'{t}category_id IS NULL')
+        if filter_purpose:
+            conditions.append('o.purpose = ?')
+            params.append(filter_purpose)
+            if filter_ret_status:
+                conditions.append('o.return_status = ?')
+                params.append(filter_ret_status)
+        if filter_return:
+            conditions.append("o.return_status = '待寄回'")
         if conditions:
             where_clause = ' WHERE ' + ' AND '.join(conditions)
-            materials = db.execute(
-                f"SELECT * FROM materials{where_clause} ORDER BY inbound_time DESC",
-                params
-            ).fetchall()
+            if needs_join:
+                materials = db.execute(
+                    f"SELECT DISTINCT m.* FROM materials m "
+                    f"JOIN outbound_records o ON m.sn = o.sn{where_clause} "
+                    f"ORDER BY m.inbound_time DESC",
+                    params
+                ).fetchall()
+            else:
+                materials = db.execute(
+                    f"SELECT * FROM materials{where_clause} ORDER BY inbound_time DESC",
+                    params
+                ).fetchall()
         else:
             materials = db.execute(
                 "SELECT * FROM materials ORDER BY inbound_time DESC"
@@ -487,13 +507,16 @@ def index():
             ORDER BY c.id
         """, (p['id'],)).fetchall()
 
-        # 每个小类取前 20 个 SN
+        # 每个小类取前 20 个 SN（跟随当前状态筛选）
         sns_for_subs = {}
         for s in subs:
-            rows = db.execute(
-                "SELECT sn FROM materials WHERE category_id=? ORDER BY inbound_time DESC LIMIT 20",
-                (s['id'],)
-            ).fetchall()
+            sn_query = "SELECT sn FROM materials WHERE category_id=?"
+            sn_params = [s['id']]
+            if filter_status:
+                sn_query += " AND status=?"
+                sn_params.append(filter_status)
+            sn_query += " ORDER BY inbound_time DESC LIMIT 20"
+            rows = db.execute(sn_query, sn_params).fetchall()
             sns_for_subs[s['id']] = [r['sn'] for r in rows]
 
         categories.append({
@@ -536,6 +559,12 @@ def index():
         ).fetchone()['cnt'],
         'repair': db.execute(
             "SELECT COUNT(*) AS cnt FROM materials WHERE status='寄修中'"
+        ).fetchone()['cnt'],
+        'after_sales_out': db.execute(
+            "SELECT COUNT(DISTINCT sn) AS cnt FROM outbound_records WHERE purpose='售后出库'"
+        ).fetchone()['cnt'],
+        'fault_repair_out': db.execute(
+            "SELECT COUNT(DISTINCT sn) AS cnt FROM outbound_records WHERE purpose='故障出库' AND return_status='待寄回'"
         ).fetchone()['cnt'],
     }
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
@@ -630,6 +659,8 @@ def index():
                            show_orphan=show_orphan,
                            filter_status=filter_status,
                            filter_return=filter_return,
+                           filter_purpose=filter_purpose,
+                           filter_ret_status=filter_ret_status,
                            show_month_in=show_month_in,
                            show_month_out=show_month_out,
                            show_month_as_new=show_month_as_new,
@@ -641,6 +672,216 @@ def index():
                            total_all=total_all,
                            orphan=orphan,
                            stats=stats)
+
+
+@app.route('/api/index_filter')
+def api_index_filter():
+    """AJAX 局部刷新：返回筛选后的表格 HTML 和子品类 SN"""
+    db = get_db()
+    # 复用和 index() 完全相同的筛选逻辑
+    search = request.args.get('search', '').strip()
+    sub_cat_id = request.args.get('cat', '').strip()
+    parent_id = request.args.get('parent', '').strip()
+    show_orphan = request.args.get('orphan', '').strip()
+
+    if sub_cat_id and not parent_id:
+        try:
+            parent_row = db.execute(
+                "SELECT parent_id FROM categories WHERE id=?", (int(sub_cat_id),)
+            ).fetchone()
+            if parent_row and parent_row['parent_id']:
+                parent_id = str(parent_row['parent_id'])
+        except (ValueError, TypeError):
+            pass
+
+    filter_status = request.args.get('status', '').strip()
+    filter_return = request.args.get('returning', '').strip()
+    filter_purpose = request.args.get('purpose', '').strip()
+    filter_ret_status = request.args.get('return_status', '').strip()
+    show_month_in = request.args.get('month_in', '').strip()
+    show_month_out = request.args.get('month_out', '').strip()
+    this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
+    show_month_as_new = request.args.get('month_as_new', '').strip()
+    show_month_as_done = request.args.get('month_as_done', '').strip()
+    show_month_fault_new = request.args.get('month_fault_new', '').strip()
+    show_month_fault_done = request.args.get('month_fault_done', '').strip()
+
+    # --- 查询逻辑（和 index() 完全相同） ---
+    if search:
+        keywords = search.split()
+        if len(keywords) == 1:
+            exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
+            if exact:
+                return jsonify({'redirect': url_for('detail', sn=search)})
+        conditions = []
+        params = []
+        for kw in keywords:
+            p = f'%{escape_like(kw)}%'
+            conditions.append(
+                '(m.sn LIKE ? OR m.remarks LIKE ? OR '
+                'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? ESCAPE \'\\\' OR customer_company LIKE ? ESCAPE \'\\\'))')
+            params.extend([p, p, p, p])
+        sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
+               + ' AND '.join(conditions) + ' ORDER BY m.inbound_time DESC')
+        materials = db.execute(sql, params).fetchall()
+    elif filter_return:
+        materials = db.execute(
+            "SELECT DISTINCT m.* FROM materials m "
+            "JOIN outbound_records o ON m.sn = o.sn "
+            "WHERE o.return_status = '待寄回' "
+            "ORDER BY m.inbound_time DESC"
+        ).fetchall()
+    elif show_month_in:
+        materials = db.execute(
+            "SELECT * FROM materials WHERE inbound_time LIKE ? ORDER BY inbound_time DESC",
+            (f'{this_month}%',)
+        ).fetchall()
+    elif show_month_out:
+        materials = db.execute(
+            "SELECT DISTINCT m.* FROM materials m "
+            "JOIN outbound_records o ON m.sn = o.sn "
+            "WHERE o.outbound_time LIKE ? ORDER BY m.inbound_time DESC",
+            (f'{this_month}%',)
+        ).fetchall()
+    else:
+        conditions = []
+        params = []
+        needs_join = bool(filter_purpose or filter_return)
+        t = 'm.' if needs_join else ''
+        if filter_status:
+            conditions.append(f'{t}status = ?')
+            params.append(filter_status)
+        if sub_cat_id:
+            conditions.append(f'{t}category_id = ?')
+            params.append(sub_cat_id)
+        elif parent_id:
+            conditions.append(f'{t}category_id IN (SELECT id FROM categories WHERE parent_id = ?)')
+            params.append(parent_id)
+        elif show_orphan:
+            conditions.append(f'{t}category_id IS NULL')
+        if filter_purpose:
+            conditions.append('o.purpose = ?')
+            params.append(filter_purpose)
+            if filter_ret_status:
+                conditions.append('o.return_status = ?')
+                params.append(filter_ret_status)
+        if filter_return:
+            conditions.append("o.return_status = '待寄回'")
+        if conditions:
+            where_clause = ' WHERE ' + ' AND '.join(conditions)
+            if needs_join:
+                materials = db.execute(
+                    f"SELECT DISTINCT m.* FROM materials m "
+                    f"JOIN outbound_records o ON m.sn = o.sn{where_clause} "
+                    f"ORDER BY m.inbound_time DESC",
+                    params
+                ).fetchall()
+            else:
+                materials = db.execute(
+                    f"SELECT * FROM materials{where_clause} ORDER BY inbound_time DESC",
+                    params
+                ).fetchall()
+        else:
+            materials = db.execute(
+                "SELECT * FROM materials ORDER BY inbound_time DESC"
+            ).fetchall()
+
+    # 批量查询最新出库用途
+    if materials:
+        sns = [m['sn'] for m in materials]
+        placeholders = ','.join(['?'] * len(sns))
+        rows = db.execute(
+            f"SELECT sn, purpose, purpose_detail, return_status FROM outbound_records WHERE sn IN ({placeholders}) "
+            "GROUP BY sn HAVING MAX(outbound_time)",
+            sns
+        ).fetchall()
+        purpose_map = {r['sn']: r['purpose'] for r in rows}
+        detail_map = {r['sn']: r['purpose_detail'] for r in rows}
+        return_map = {r['sn']: r['return_status'] for r in rows}
+        materials = [dict(m) for m in materials]
+        for m in materials:
+            if m['status'] == '在库':
+                m['latest_purpose'] = ''
+                m['latest_purpose_detail'] = ''
+                m['latest_return_status'] = ''
+            else:
+                m['latest_purpose'] = purpose_map.get(m['sn'], '')
+                m['latest_purpose_detail'] = detail_map.get(m['sn'], '')
+                m['latest_return_status'] = return_map.get(m['sn'], '')
+        # 品类名
+        cat_ids = set(m.get('category_id') for m in materials if m.get('category_id'))
+        cat_map = {}
+        if cat_ids:
+            cat_rows = db.execute(
+                "SELECT c.id, c.name AS cat_name, p.name AS parent_name "
+                "FROM categories c LEFT JOIN categories p ON c.parent_id=p.id "
+                "WHERE c.id IN ({})".format(','.join('?' * len(cat_ids))),
+                list(cat_ids)
+            ).fetchall()
+            cat_map = {r['id']: (r['cat_name'], r['parent_name']) for r in cat_rows}
+        for m in materials:
+            info = cat_map.get(m.get('category_id'))
+            m['cat_name'] = info[0] if info else ''
+            m['parent_name'] = info[1] if info else ''
+
+    # 子品类 SN（跟随状态筛选）
+    parents = db.execute("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY id").fetchall()
+    categories = []
+    for p in parents:
+        subs = db.execute("""
+            SELECT c.*,
+                COUNT(m.sn) AS total,
+                SUM(CASE WHEN m.status='在库' THEN 1 ELSE 0 END) AS in_stock,
+                SUM(CASE WHEN m.status='已出库' THEN 1 ELSE 0 END) AS outbound,
+                SUM(CASE WHEN m.status='售后中' THEN 1 ELSE 0 END) AS after_sales,
+                SUM(CASE WHEN m.status='故障中' THEN 1 ELSE 0 END) AS fault,
+                SUM(CASE WHEN m.status='寄修中' THEN 1 ELSE 0 END) AS repair
+            FROM categories c
+            LEFT JOIN materials m ON m.category_id = c.id
+            WHERE c.parent_id = ?
+            GROUP BY c.id
+            ORDER BY c.id
+        """, (p['id'],)).fetchall()
+        sns_for_subs = {}
+        for s in subs:
+            sn_query = "SELECT sn FROM materials WHERE category_id=?"
+            sn_params = [s['id']]
+            if filter_status:
+                sn_query += " AND status=?"
+                sn_params.append(filter_status)
+            sn_query += " ORDER BY inbound_time DESC LIMIT 20"
+            rows = db.execute(sn_query, sn_params).fetchall()
+            sns_for_subs[s['id']] = [r['sn'] for r in rows]
+        categories.append({
+            'id': p['id'], 'name': p['name'],
+            'subs': [{
+                'id': s['id'], 'name': s['name'],
+                'total': s['total'] or 0, 'in_stock': s['in_stock'] or 0,
+                'outbound': s['outbound'] or 0, 'after_sales': s['after_sales'] or 0,
+                'fault': s['fault'] or 0, 'repair': s['repair'] or 0,
+                'sns': sns_for_subs.get(s['id'], [])
+            } for s in subs]
+        })
+
+    return jsonify({
+        'materials': materials,
+        'categories': categories,
+        'filter_status': filter_status,
+        'filter_purpose': filter_purpose,
+        'filter_ret_status': filter_ret_status,
+        'filter_return': filter_return,
+        'current_cat': sub_cat_id,
+        'current_parent': parent_id,
+        'show_orphan': show_orphan,
+        'show_month_in': show_month_in,
+        'show_month_out': show_month_out,
+        'show_month_as_new': show_month_as_new,
+        'show_month_as_done': show_month_as_done,
+        'show_month_fault_new': show_month_fault_new,
+        'show_month_fault_done': show_month_fault_done,
+        'search': search,
+        'orphan': db.execute("SELECT COUNT(*) AS cnt FROM materials WHERE category_id IS NULL").fetchone()['cnt'],
+    })
 
 
 @app.route('/detail/<sn>')
@@ -1615,30 +1856,30 @@ def api_outbound_batch():
     # 寄修模式（仅故障出库支持）
     is_repair = purpose == '故障出库' and data.get('supplier')
     supplier = data.get('supplier', '')
-    fault_courier = data.get('fault_courier', '')
-    fault_tracking = data.get('fault_tracking', '')
+    # 每个SN独立的故障原因（故障出库时前端传入）
+    fault_details = data.get('fault_details', {})
+    if not isinstance(fault_details, dict):
+        fault_details = {}
 
     db.execute("BEGIN IMMEDIATE")
     try:
         for sn in sns:
+            # 故障出库时优先使用该SN独立的故障原因，否则用共用purpose_detail
+            sn_fault_reason = fault_details.get(sn, '').strip() if fault_details else purpose_detail
             db.execute(
                 "INSERT INTO outbound_records (sn, outbound_time, purpose, purpose_detail, "
                 "courier_company, tracking_number, customer_name, customer_contact, "
                 "customer_company, address, remarks, return_status, return_sn, "
                 "return_courier, return_tracking) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sn, now, purpose, purpose_detail, courier, tracking, customer, contact,
+                (sn, now, purpose, sn_fault_reason, courier, tracking, customer, contact,
                  company, address, remarks, return_status, return_sn,
                  return_courier, return_tracking))
             if is_repair:
                 db.execute(
-                    "UPDATE outbound_records SET courier_company=?, tracking_number=? "
-                    "WHERE sn=? AND outbound_time=? AND purpose='故障出库'",
-                    (fault_courier, fault_tracking, sn, now))
-                db.execute(
                     "INSERT INTO fault_records (sn, created_time, fault_reason, status, "
                     "previous_status, repair_type, supplier) VALUES (?,?,?,?,?,?,?)",
-                    (sn, now, purpose_detail.replace('故障: ', ''),
+                    (sn, now, sn_fault_reason,
                      '寄修中', '在库', '寄修', supplier))
                 db.execute("UPDATE materials SET status='寄修中' WHERE sn=?", (sn,))
             else:

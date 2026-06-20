@@ -1,0 +1,191 @@
+================================================================================
+  物料全流程追溯系统 v2.5 — 会话记录（第六部分：首页筛选修复 + AJAX 局部刷新 + 批量出库改造）
+  日期：2026-06-13 ~ 2026-06-16
+  项目路径：C:\Users\1\material-tracking
+  部署地址：http://127.0.0.1:8080
+================================================================================
+
+目录
+----
+  一、首页统计卡片修复（3项）
+  二、批量出库故障信息独立填写
+  三、出库记录标签清理
+  四、品类筛选组合逻辑修复
+  五、卡片导航参数冲突修复
+  六、子品类 SN 列表跟随筛选
+  七、AJAX 局部无闪烁刷新
+  八、筛选参数互清机制
+
+================================================================================
+  一、首页统计卡片修复（3项）
+================================================================================
+
+问题1：售后出库/故障寄修出库卡片不显示数量
+  根因：模板引用了 stats.after_sales_out 和 stats.fault_repair_out，但 app.py 从未定义
+  修复：在 stats dict 中添加两个 SQL 统计查询
+    - after_sales_out = COUNT(DISTINCT sn) FROM outbound_records WHERE purpose='售后出库'
+    - fault_repair_out = COUNT(DISTINCT sn) FROM outbound_records WHERE purpose='故障出库' AND return_status='待寄回'
+
+问题2：卡片高度不一致
+  根因：前5个卡片用 card-body p-2，后3个多了 d-flex + min-height:85px
+  修复：去掉后3个卡片的多余样式，统一高度
+
+问题3：点击卡片后无法筛选
+  根因：后端未处理 ?purpose= 和 ?return_status= 查询参数
+  修复：index() 添加 filter_purpose 和 filter_ret_status 提取，新增 elif 筛选分支
+
+================================================================================
+  二、批量出库故障信息独立填写
+================================================================================
+
+问题：批量出库选"故障出库"时，所有 SN 共用一套故障原因
+  用户需求：每个 SN 坏的地方可能不同，应各自填写
+
+前端改动（batch_outbound.html）：
+  - 新增 faultDetails = {} 全局对象存储每SN故障原因
+  - refreshList()：故障出库时每行渲染为「SN chip + 独立输入框」
+  - 用途联动：故障出库时隐藏共用文本框
+  - 提交逻辑：收集 fault_details 映射发送，有空值提示确认
+  - localStorage 持久化 faultDetails
+  - removeSn/clearAll/提交成功 均清理 faultDetails
+
+后端改动（app.py api_outbound_batch）：
+  - 接收 fault_details = {sn: fault_reason, ...}
+  - 每个 SN 优先使用自己的 fault_reason，否则用共用 purpose_detail
+  - outbound_records.purpose_detail 和 fault_records.fault_reason 均使用独立值
+
+================================================================================
+  三、出库记录标签清理
+================================================================================
+
+问题1：出库记录表格表头显示"待寄回故障件"
+  根因：detail.html 出库记录 <th> 标题写成"待寄回故障件"，实际该列显示的是寄回状态
+  修复：改为"寄回状态"
+
+问题2：首页/detail页把"售后出库"替换显示为"待寄回故障件"
+  根因：模板里嵌套死代码 {% if o.purpose == '售后出库' %}待寄回故障件{% else %}{{ o.purpose }}{% endif %}
+  修复：直接显示真实用途名，寄回状态由独立列显示
+
+问题3：首页用途列 17 行冗余代码
+  根因：每个 if/elif 分支里嵌套了 {% if latest_purpose == '售后出库' %}... 永假判断
+  修复：精简为 5 行，保留颜色区分，直接显示用途名
+
+================================================================================
+  四、品类筛选组合逻辑修复
+================================================================================
+
+问题：点"屏幕"品类后再点"在库"，会把不属于该品类/状态的 SN 也筛选进来
+
+根因分析（三层）：
+  1. 后端 elif 链：filter_purpose 和 filter_return 作为独立 elif 分支，
+     拦截在 else 组合筛选之前，URL 带多个参数时只执行最先命中的分支
+  2. 前端参数残留：子卡片 stat-box 点击只设 cat 不更新 parent，
+     toggleParent 不清理 cat，导致 URL 里 cat 和 parent 指向不同品类
+  3. "总计" stat-box 不清理 status 等参数，URL 不变导致浏览器不跳转
+
+修复：
+  后端 — 将 filter_purpose 和 filter_return 移入 else 统一组合筛选，
+        四个维度（status/category/purpose/return）可自由 AND 组合。
+        非 JOIN 查询不加表前缀，JOIN 查询加 m. 前缀，用 needs_join 标志控制。
+
+  前端 — filterByCat 同步修正 parent 为正确的所属大类；
+        toggleParent 切大类时清除 cat；
+        "总计" stat-box 清除 status/purpose 等所有筛选参数；
+        navigateWithStatus/Purpose/Returning 互清对方参数。
+
+================================================================================
+  五、子品类 SN 列表跟随筛选
+================================================================================
+
+问题：status=已出库 页面下，子品类卡片 SN 预览列出了在库的物料
+  根因：子卡片 SN 查询无筛选条件（WHERE category_id=? LIMIT 20）
+  修复：SN 查询跟随当前 filter_status
+
+问题：SN = SN:2505V0303KH102 在库但"出现"在已出库筛选
+  根因1：子卡片 SN 列表无条件展示（已修复）
+  根因2：URL 残留 month_out=1 参数，navigateWithStatus 未清理
+  数据事实：该 SN 6/12 出库后重新入库，状态正确=在库，
+            本月出库包含它是正确行为（出库操作发生在当月）
+
+================================================================================
+  六、卡片导航参数冲突修复
+================================================================================
+
+问题链：点击"故障寄修出库"→ 再点"已出库"切不过去
+  根因：navigateWithStatus 保留了 URL 中残留的 purpose/return_status/month_out 等参数，
+        后端 elif 分支优先拦截，status 参数被忽略
+  修复：三个导航函数均清除所有不兼容参数：
+    - navigateWithStatus → 清除 purpose/return_status/returning/month_in/month_out/search
+    - navigateWithPurpose → 清除 status/returning/month_in/month_out/search
+    - navigateWithReturning → 清除 status/purpose/return_status/month_in/month_out/search
+
+================================================================================
+  七、AJAX 局部无闪烁刷新
+================================================================================
+
+用户需求：点筛选卡片时页面不要白屏弹跳
+
+后端新增：
+  /api/index_filter 路由 → 复用 index() 全部筛选逻辑，返回 JSON
+  （materials, categories, filter_status, current_parent, current_cat 等）
+
+前端改造（index.html）：
+  - 新增 ajaxNavigate(params)：fetch API → updateTable + updateSubSns + updateCategories
+  - updateTable(d)：重建表头（筛选标签+计数）和表格 HTML
+  - updateSubSns(d)：更新子品类卡片里的 SN 标签
+  - updateCategories(d)：展开/收起子品类卡片、更新 pill 激活状态、更新 stat-box 数字
+  - history.pushState + popstate 监听 → 支持浏览器前进/后退
+  - API 失败时 fallback 到全页刷新
+  - 添加 esc() HTML 转义函数
+  - 添加 cleanParams() 过滤 null/空值
+
+所有筛选入口改为 AJAX：
+  - 状态卡片（navigateWithStatus）
+  - 用途卡片（navigateWithPurpose）
+  - 待寄回卡片（navigateWithReturning）
+  - 大类 pill（toggleParent）
+  - 子卡片点击（filterByCat）
+  - 全部/未分类 pill
+  - stat-box（总计/在库/已出库/售后中/故障中/寄修中）
+  - 顶部统计卡片（总物料/本月入库/本月出库）
+
+================================================================================
+  八、筛选参数互清机制总结
+================================================================================
+
+三类导航函数互清规则：
+
+| 点击              | 保留参数           | 清除参数                                      |
+|-------------------|--------------------|----------------------------------------------|
+| 状态卡片（在库/已出库） | cat,parent,orphan  | purpose,return_status,returning,month_in/out,search |
+| 用途卡片（售后/故障寄修）| cat,parent,orphan  | status,returning,month_in/out,search          |
+| 待寄回卡片         | cat,parent,orphan  | status,purpose,return_status,month_in/out,search |
+
+品类导航互清规则：
+  - toggleParent：清除 cat
+  - filterByCat：同步修正 parent
+  - "总计" stat-box：清除所有筛选参数
+  - "全部" pill：清除所有参数
+
+================================================================================
+  当前状态
+================================================================================
+
+本地：
+  ✅ 代码：全部功能 + Bug 修复 + AJAX 无闪烁刷新
+  ✅ 数据：32 条物料
+  ✅ 服务：http://127.0.0.1:8080 正常运行
+  ✅ 品类筛选：status/category/purpose/return_status 四个维度可自由组合
+  ✅ 批量出库：故障出库每个 SN 独立填写故障原因
+  ✅ 页面切换：AJAX 局部刷新，无白屏闪烁
+  ✅ 浏览器前进/后退：popstate 监听恢复筛选状态
+
+注意事项：
+  - 用户另有 http://127.0.0.1:8088 系统，重启 8080 时不能全杀 Python
+  - 重启命令：先查端口 PID，只杀 8080 端口的进程
+    taskkill //F //PID <8080端口PID>
+    然后：cd C:\Users\1\material-tracking && python app.py
+
+================================================================================
+  生成时间：2026-06-16
+================================================================================

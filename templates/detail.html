@@ -165,9 +165,9 @@
         <div class="tab-pane fade" id="outboundPanel">
             {% if outbounds %}
             <div class="table-responsive"><table class="table table-hover table-striped">
-                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>待寄回故障件</th><th>备注</th><th style="width:80px;"></th></tr></thead>
+                <thead class="table-dark"><tr><th>用途</th><th>时间</th><th>联系人</th><th>公司</th><th>联系方式</th><th>地址</th><th>快递</th><th>单号</th><th>寄回状态</th><th>备注</th><th style="width:80px;"></th></tr></thead>
                 <tbody>{% for o in outbounds %}<tr>
-                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{% if o.purpose == '售后出库' %}待寄回故障件{% else %}{{ o.purpose }}{% endif %}</span>{% if o.purpose_detail %}<div class="fw-bold text-dark mt-1">{{ o.purpose_detail }}</div>{% endif %}{% else %}-{% endif %}</td>
+                    <td>{% if o.purpose %}<span class="badge bg-info text-dark">{{ o.purpose }}</span>{% if o.purpose_detail %}<div class="fw-bold text-dark mt-1">{{ o.purpose_detail }}</div>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-nowrap">{{ o.outbound_time }}</td>
                     <td>{{ o.customer_name or '-' }}</td>
                     <td>{{ o.customer_company or '-' }}</td>
@@ -179,7 +179,11 @@
                         {% if o.return_status == '待寄回' %}
                         <span class="badge bg-warning text-dark">待寄回</span>
                         {% if o.return_sn %}<div><small class="text-muted">故障件: {{ o.return_sn }}</small></div>{% endif %}
+                        {% if o.purpose == '故障出库' %}
+                        <small class="text-muted d-block mt-1">请使用右上角"修复完成（寄回）"</small>
+                        {% else %}
                         <button class="btn btn-outline-success btn-sm mt-1" onclick="markReturned({{ o.id }})" title="标记已寄回"><i class="bi bi-box-arrow-in-down"></i></button>
+                        {% endif %}
                         {% elif o.return_status == '已寄回' %}
                         <span class="badge bg-success">已寄回</span>
                         {% if o.return_sn %}<div><small class="text-muted">故障件: {{ o.return_sn }}</small></div>{% endif %}

@@ -81,7 +81,7 @@
     <!-- 统计卡片 -->
     <div class="row g-2 mb-3">
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-primary" style="cursor:pointer;" onclick="window.location='/'">
+                <div class="card text-center border-primary" style="cursor:pointer;" onclick="ajaxNavigate({})">
                     <div class="card-body p-2">
                         <div class="fs-4 fw-bold text-primary">{{ total_all }}</div>
                         <small class="text-muted text-nowrap">总物料</small>
@@ -105,7 +105,7 @@
                 </div>
             </div>
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-info" style="cursor:pointer;" onclick="window.location='/?month_in=1'">
+                <div class="card text-center border-info" style="cursor:pointer;" onclick="ajaxNavigate({month_in:'1'})">
                     <div class="card-body p-2">
                         <div class="fs-4 fw-bold text-info">{{ stats.month_in }}</div>
                         <small class="text-muted text-nowrap">本月入库</small>
@@ -113,7 +113,7 @@
                 </div>
             </div>
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-secondary" style="cursor:pointer;" onclick="window.location='/?month_out=1'">
+                <div class="card text-center border-secondary" style="cursor:pointer;" onclick="ajaxNavigate({month_out:'1'})">
                     <div class="card-body p-2">
                         <div class="fs-4 fw-bold text-secondary">{{ stats.month_out }}</div>
                         <small class="text-muted text-nowrap">本月出库</small>
@@ -121,24 +121,24 @@
                 </div>
             </div>
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-danger" style="cursor:pointer;" onclick="window.location='/?purpose=售后出库'">
-                    <div class="card-body p-2 d-flex flex-column align-items-center justify-content-center" style="min-height:85px">
+                <div class="card text-center border-danger" style="cursor:pointer;" onclick="navigateWithPurpose('售后出库')">
+                    <div class="card-body p-2">
                         <div class="fs-4 fw-bold text-danger">{{ stats.after_sales_out }}</div>
                         <small class="text-muted text-nowrap">售后出库</small>
                     </div>
                 </div>
             </div>
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-warning" style="cursor:pointer;background:#fff0f0;" onclick="window.location='/?purpose=故障出库&return_status=待寄回'">
-                    <div class="card-body p-2 d-flex flex-column align-items-center justify-content-center" style="min-height:85px">
+                <div class="card text-center border-warning" style="cursor:pointer;background:#fff0f0;" onclick="navigateWithPurpose('故障出库','待寄回')">
+                    <div class="card-body p-2">
                         <div class="fs-4 fw-bold" style="color:#ff6b6b;">{{ stats.fault_repair_out }}</div>
                         <small class="text-muted text-nowrap">故障寄修出库</small>
                     </div>
                 </div>
             </div>
             <div class="col-4 col-sm-3 col-md-2">
-                <div class="card text-center border-warning" style="cursor:pointer;background:#fff3cd;" onclick="window.location='/?returning=1'">
-                    <div class="card-body p-2 d-flex flex-column align-items-center justify-content-center" style="min-height:85px">
+                <div class="card text-center border-warning" style="cursor:pointer;background:#fff3cd;" onclick="navigateWithReturning()">
+                    <div class="card-body p-2">
                         <div class="fs-4 fw-bold" style="color:#e67e22;">{{ stats.returning }}</div>
                         <small class="text-muted text-nowrap">待寄回</small>
                     </div>
@@ -247,7 +247,7 @@
     <!-- 品类导航栏 -->
     <div class="category-bar">
         <span class="cat-pill {% if not current_cat and not current_parent and not search %}active{% endif %}"
-              onclick="window.location='/'">
+              onclick="ajaxNavigate({})">
             全部 <small class="text-muted text-nowrap">({{ total_all }})</small>
         </span>
         {% for cat in categories %}
@@ -259,7 +259,7 @@
         {% endfor %}
         {% if orphan > 0 %}
         <span class="cat-pill text-muted {% if show_orphan %}active{% endif %}"
-              onclick="window.location='/?orphan=1'" style="cursor:pointer;">
+              onclick="ajaxNavigate({orphan:'1'})" style="cursor:pointer;">
             未分类 <small>({{ orphan }})</small>
         </span>
         {% endif %}
@@ -281,27 +281,27 @@
                             <span class="badge bg-secondary ms-1">{{ sub.total }} 件</span>
                         </h6>
                         <div class="d-flex gap-2 flex-wrap">
-                            <div class="stat-box">
+                            <div class="stat-box" style="cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }}}))" title="按品类筛选全部">
                                 <div class="num">{{ sub.total }}</div>
                                 <div class="lbl">总计</div>
                             </div>
-                            <div class="stat-box green">
+                            <div class="stat-box green" style="cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }},status:'在库'}))" title="品类 + 在库">
                                 <div class="num">{{ sub.in_stock }}</div>
                                 <div class="lbl">在库</div>
                             </div>
-                            <div class="stat-box yellow">
+                            <div class="stat-box yellow" style="cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }},status:'已出库'}))" title="品类 + 已出库">
                                 <div class="num">{{ sub.outbound }}</div>
                                 <div class="lbl">已出库</div>
                             </div>
-                            <div class="stat-box red">
+                            <div class="stat-box red" style="cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }},status:'售后中'}))" title="品类 + 售后中">
                                 <div class="num">{{ sub.after_sales }}</div>
                                 <div class="lbl">售后中</div>
                             </div>
-                            <div class="stat-box" style="background:#fff3cd;">
+                            <div class="stat-box" style="background:#fff3cd;cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }},status:'故障中'}))" title="品类 + 故障中">
                                 <div class="num" style="color:#fd7e14;">{{ sub.fault }}</div>
                                 <div class="lbl">故障中</div>
                             </div>
-                            <div class="stat-box" style="background:#fff0f0;">
+                            <div class="stat-box" style="background:#fff0f0;cursor:pointer;" onclick="event.stopPropagation();ajaxNavigate(cleanParams({cat:{{ sub.id }},status:'寄修中'}))" title="品类 + 寄修中">
                                 <div class="num" style="color:#ff6b6b;">{{ sub.repair }}</div>
                                 <div class="lbl">寄修中</div>
                             </div>
@@ -338,6 +338,7 @@
                 {% if search %}搜索 "{{ search }}" 结果：{% endif %}
                 {% if filter_status %}状态「{{ filter_status }}」：{% endif %}
                 {% if filter_return %}待寄回故障件：{% endif %}
+                {% if filter_purpose %}出库用途「{{ filter_purpose }}」{% if filter_ret_status %} + 寄回状态「{{ filter_ret_status }}」{% endif %}：{% endif %}
                 {% if show_orphan %}未分类物料：{% endif %}
                 {% if current_cat %}按品类筛选：{% endif %}
                 {% if show_month_in %}本月入库物料：{% endif %}
@@ -347,7 +348,7 @@
                 {% if show_month_fault_new %}本月新增故障：{% endif %}
                 {% if show_month_fault_done %}本月修复故障：{% endif %}
                 {% if current_parent %}大类筛选：{% endif %}
-                {% if not search and not current_cat and not current_parent and not show_orphan and not filter_status and not filter_return and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
+                {% if not search and not current_cat and not current_parent and not show_orphan and not filter_status and not filter_return and not filter_purpose and not show_month_in and not show_month_out and not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done %}全部物料：{% endif %}
                 <strong>{% if show_month_as_new or show_month_as_done %}{{ as_records|length }}{% elif show_month_fault_new or show_month_fault_done %}{{ fault_records_list|length }}{% else %}{{ materials|length }}{% endif %}</strong> 条记录
             </span>
             <div>
@@ -460,18 +461,8 @@
                                 {% endif %}
                             </td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">
-                                {% if m.latest_purpose == '销售出库' %}
-                                <span class="badge bg-primary text-white">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
-                                {% elif m.latest_purpose == '售后出库' %}
-                                <span class="badge bg-danger">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
-                                {% elif m.latest_purpose == '售后返客户' %}
-                                <span class="badge bg-warning text-dark">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
-                                {% elif m.latest_purpose == '测试出库' %}
-                                <span class="badge bg-secondary">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
-                                {% elif m.latest_purpose == '寄修出库' %}
-                                <span class="badge bg-info text-dark">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
-                                {% elif m.latest_purpose %}
-                                <span class="badge bg-info text-dark">{% if m.latest_purpose == '售后出库' %}待寄回故障件{% else %}{{ m.latest_purpose }}{% endif %}</span>
+                                {% if m.latest_purpose %}
+                                <span class="badge {% if m.latest_purpose == '销售出库' %}bg-primary text-white{% elif m.latest_purpose == '售后出库' %}bg-danger{% elif m.latest_purpose == '售后返客户' %}bg-warning text-dark{% elif m.latest_purpose == '测试出库' %}bg-secondary{% elif m.latest_purpose == '寄修出库' or m.latest_purpose == '故障出库' %}bg-info text-dark{% else %}bg-info text-dark{% endif %}">{{ m.latest_purpose }}</span>
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
@@ -565,14 +556,254 @@ function buildUrl(newParams) {
     return '/' + (qs ? '?' + qs : '');
 }
 
-// 状态筛选，保留已有 cat/parent/orphan 参数
+// HTML 转义
+function esc(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+// ======= AJAX 局部刷新 =======
+var _ajaxBusy = false;
+var _currentFilters = {};  // 当前生效的筛选参数
+
+function ajaxNavigate(params) {
+    if (_ajaxBusy) return;
+    _ajaxBusy = true;
+    var url = '/api/index_filter?' + new URLSearchParams(params).toString();
+    fetch(url).then(function(r){ return r.json(); }).then(function(d){
+        if (d.redirect) { window.location = d.redirect; return; }
+        _currentFilters = params;
+        updateTable(d);
+        updateSubSns(d);
+        updateCategories(d);
+        var newUrl = buildUrl(params);
+        if (window.location.pathname + window.location.search !== newUrl) {
+            history.pushState(params, '', newUrl);
+        }
+        _ajaxBusy = false;
+    }).catch(function(){
+        // 网络错误时 fallback 到全页刷新
+        window.location = buildUrl(params);
+    });
+}
+
+function updateTable(d) {
+    var materials = d.materials || [];
+    var tableCard = document.querySelector('.card.shadow-sm.mt-3');
+    var cardHeader = tableCard ? tableCard.querySelector('.card-header') : null;
+    var cardBody = tableCard ? tableCard.querySelector('.card-body') : null;
+
+    // 更新表头文字
+    if (cardHeader) {
+        var parts = [];
+        if (d.search) parts.push('搜索 "' + d.search + '" 结果：');
+        if (d.filter_status) parts.push('状态「' + d.filter_status + '」：');
+        if (d.filter_return) parts.push('待寄回故障件：');
+        if (d.filter_purpose) parts.push('出库用途「' + d.filter_purpose + '」' + (d.filter_ret_status ? ' + 寄回状态「' + d.filter_ret_status + '」' : '') + '：');
+        if (d.show_orphan) parts.push('未分类物料：');
+        if (d.current_cat) parts.push('按品类筛选：');
+        if (d.show_month_in) parts.push('本月入库物料：');
+        if (d.show_month_out) parts.push('本月出库物料：');
+        if (d.show_month_as_new) parts.push('本月新增售后：');
+        if (d.show_month_as_done) parts.push('本月完成售后：');
+        if (d.show_month_fault_new) parts.push('本月新增故障：');
+        if (d.show_month_fault_done) parts.push('本月修复故障：');
+        if (d.current_parent) parts.push('大类筛选：');
+        if (!parts.length) parts.push('全部物料：');
+        var count = materials.length;
+        cardHeader.innerHTML = '<span>' + parts.join('') + '<strong>' + count + '</strong> 条记录</span>'
+            + '<div>'
+            + '<button class="btn btn-outline-secondary btn-sm me-2" id="manageBtn" onclick="toggleManage()">管理</button>'
+            + '<span id="manageActions" style="display:none;">'
+            + '<button class="btn btn-danger btn-sm me-2" id="batchDelBtn" onclick="batchDelete()" disabled>🗑 批量删除</button>'
+            + '<button class="btn btn-outline-secondary btn-sm me-2" onclick="toggleManage()">取消</button>'
+            + '</span>'
+            + '<a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>'
+            + '</div>';
+    }
+
+    // 更新表格
+    if (cardBody) {
+        if (materials.length === 0) {
+            cardBody.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-inbox" style="font-size:3rem;"></i><p class="mt-2">暂无匹配物料</p></div>';
+        } else {
+            var html = '<div class="table-responsive"><table class="table table-hover table-striped mb-0"><thead class="table-dark"><tr>'
+                + '<th style="width:40px;display:none;" class="mgmt-cb"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>'
+                + '<th>SN</th><th>品类</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>'
+                + '</tr></thead><tbody>';
+            var statusBadges = {
+                '在库': 'bg-success',
+                '已出库': 'bg-warning text-dark',
+                '售后中': 'bg-danger',
+                '故障中': 'bg-warning text-dark',
+                '寄修中': 'bg-info text-dark'
+            };
+            var purposeBadges = {
+                '销售出库': 'bg-primary text-white',
+                '售后出库': 'bg-danger',
+                '售后返客户': 'bg-warning text-dark',
+                '测试出库': 'bg-secondary',
+                '寄修出库': 'bg-info text-dark',
+                '故障出库': 'bg-info text-dark'
+            };
+            materials.forEach(function(m){
+                var statusCls = statusBadges[m.status] || 'bg-secondary';
+                var purposeCls = purposeBadges[m.latest_purpose] || 'bg-info text-dark';
+                html += '<tr>'
+                    + '<td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="' + esc(m.sn) + '" onchange="updateBatchDelBtn()"></td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row"><span class="fw-bold text-primary">' + esc(m.sn) + '</span></td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + (m.cat_name ? '<span class="badge bg-secondary">' + esc(m.cat_name) + '</span>' : '<span class="text-muted">-</span>') + '</td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + esc(m.hw_version || '-') + '</td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + esc(m.sw_version || '-') + '</td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row"><span class="badge ' + statusCls + ' status-badge">' + esc(m.status) + '</span></td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">'
+                    + (m.latest_purpose ? '<span class="badge ' + purposeCls + '">' + esc(m.latest_purpose) + '</span>' : '<span class="text-muted">-</span>')
+                    + (m.latest_purpose_detail ? '<div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">' + esc(m.latest_purpose_detail) + '</div>' : '')
+                    + (m.latest_return_status === '待寄回' ? '<span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>' : '')
+                    + (m.latest_return_status === '已寄回' ? '<span class="badge bg-success" style="font-size:0.7rem;">已寄回</span>' : '')
+                    + '</td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + esc(m.inbound_time) + '</td>'
+                    + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="' + esc(m.remarks || '') + '">' + esc(m.remarks || '-') + '</small></td>'
+                    + '<td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial(\'' + esc(m.sn) + '\')" title="删除物料">🗑</button></td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>';
+            cardBody.innerHTML = html;
+        }
+    }
+    // 隐藏管理模式按钮
+    document.getElementById('manageBtn').style.display = '';
+    document.getElementById('manageActions').style.display = 'none';
+    document.querySelectorAll('.mgmt-cb').forEach(function(el){ el.style.display = 'none'; });
+}
+
+function updateSubSns(d) {
+    var cats = d.categories || [];
+    cats.forEach(function(cat){
+        cat.subs.forEach(function(sub){
+            var card = document.getElementById('subcard-' + sub.id);
+            if (card) {
+                var snContainer = card.querySelector('div[style*=\"flex:1\"]');
+                if (snContainer && sub.sns && sub.sns.length) {
+                    var tags = sub.sns.map(function(sn){
+                        return '<span class=\"sn-tag\" onclick=\"event.stopPropagation();window.location.href=\'/detail/' + esc(sn) + '\'\" title=\"点击查看详情\">' + esc(sn) + '</span>';
+                    }).join('\n');
+                    snContainer.innerHTML = '<div class=\"section-title\">包含物料：</div><div>' + tags + (sub.total > 20 ? '<span class=\"sn-tag text-muted\">...共 ' + sub.total + ' 件</span>' : '') + '</div>';
+                } else if (snContainer) {
+                    snContainer.innerHTML = '<span class=\"text-muted\">暂无物料</span>';
+                }
+            }
+        });
+    });
+}
+
+function updateCategories(d) {
+    // 更新大类 pill 激活状态
+    document.querySelectorAll('.cat-pill.cat-parent').forEach(function(p){
+        p.classList.remove('active');
+    });
+    if (d.current_parent) {
+        var parentPill = document.querySelector('.cat-pill.cat-parent[data-cid="' + d.current_parent + '"]');
+        if (parentPill) parentPill.classList.add('active');
+        activeParent = parseInt(d.current_parent);
+    } else {
+        activeParent = null;
+    }
+
+    // 显示/隐藏子品类卡片
+    document.querySelectorAll('.sub-cards-container').forEach(function(el){ el.style.display = 'none'; });
+    if (d.current_parent) {
+        var container = document.getElementById('parent-' + d.current_parent);
+        if (container) container.style.display = 'block';
+    }
+
+    // 更新全部/未分类 pill 激活状态
+    var allPill = document.querySelector('.cat-pill:not(.cat-parent):not(.text-muted)');
+    if (allPill) {
+        if (!d.current_parent && !d.current_cat && !d.search && !d.show_orphan) {
+            allPill.classList.add('active');
+        } else {
+            allPill.classList.remove('active');
+        }
+    }
+    var orphanPill = document.querySelector('.cat-pill.text-muted');
+    if (orphanPill) {
+        if (d.show_orphan) orphanPill.classList.add('active');
+        else orphanPill.classList.remove('active');
+    }
+
+    // 更新子品类卡片高亮
+    document.querySelectorAll('.sub-card').forEach(function(c){ c.classList.remove('active-card'); });
+    if (d.current_cat) {
+        var subCard = document.getElementById('subcard-' + d.current_cat);
+        if (subCard) subCard.classList.add('active-card');
+    }
+
+    // 更新 stat-box 数字
+    var cats = d.categories || [];
+    cats.forEach(function(cat){
+        cat.subs.forEach(function(sub){
+            var card = document.getElementById('subcard-' + sub.id);
+            if (!card) return;
+            var nums = card.querySelectorAll('.stat-box .num');
+            if (nums.length >= 6) {
+                nums[0].textContent = sub.total;
+                nums[1].textContent = sub.in_stock;
+                nums[2].textContent = sub.outbound;
+                nums[3].textContent = sub.after_sales;
+                nums[4].textContent = sub.fault;
+                nums[5].textContent = sub.repair;
+            }
+        });
+    });
+}
+
+// 拦截 popstate（浏览器前进/后退）
+window.addEventListener('popstate', function(e){
+    if (e.state) {
+        ajaxNavigate(e.state);
+    } else {
+        window.location.reload();
+    }
+});
+
+// 状态筛选，保留已有 cat/parent/orphan 参数，清除所有不兼容参数
 function navigateWithStatus(status) {
     var sp = new URLSearchParams(window.location.search);
     var params = {status: status};
     if (sp.get('cat')) params.cat = sp.get('cat');
     if (sp.get('parent')) params.parent = sp.get('parent');
     if (sp.get('orphan')) params.orphan = sp.get('orphan');
-    window.location = buildUrl(params);
+    ajaxNavigate(cleanParams(params));
+}
+
+// 用途筛选，保留已有 cat/parent/orphan 参数，清除不兼容参数
+function navigateWithPurpose(purpose, returnStatus) {
+    var sp = new URLSearchParams(window.location.search);
+    var params = {purpose: purpose};
+    if (returnStatus) params.return_status = returnStatus;
+    if (sp.get('cat')) params.cat = sp.get('cat');
+    if (sp.get('parent')) params.parent = sp.get('parent');
+    if (sp.get('orphan')) params.orphan = sp.get('orphan');
+    params.status = null; params.returning = null;
+    params.month_in = null; params.month_out = null; params.search = null;
+    ajaxNavigate(cleanParams(params));
+}
+
+// 待寄回筛选
+function navigateWithReturning() {
+    var sp = new URLSearchParams(window.location.search);
+    var params = {returning: '1'};
+    if (sp.get('cat')) params.cat = sp.get('cat');
+    if (sp.get('parent')) params.parent = sp.get('parent');
+    if (sp.get('orphan')) params.orphan = sp.get('orphan');
+    params.status = null; params.purpose = null; params.return_status = null;
+    params.month_in = null; params.month_out = null; params.search = null;
+    ajaxNavigate(cleanParams(params));
+}
+
+// 清除 null/空值参数
+function cleanParams(p) {
+    var r = {};
+    for (var k in p) { if (p[k] !== null && p[k] !== '') r[k] = p[k]; }
+    return r;
 }
 
 // ======= 品类展开/收起 =======
@@ -581,17 +812,27 @@ let activeParent = {{ current_parent|int if current_parent else 'null' }};
 function toggleParent(cid) {
     if (activeParent === cid) {
         activeParent = null;
-        window.location = buildUrl({parent: null});
+        ajaxNavigate({});
     } else {
         activeParent = cid;
-        window.location = buildUrl({parent: cid});
+        ajaxNavigate({parent: cid});
     }
 }
 
 function filterByCat(cid) {
     document.querySelectorAll('.sub-card').forEach(c => c.classList.remove('active-card'));
-    document.getElementById('subcard-' + cid)?.classList.add('active-card');
-    window.location = buildUrl({cat: cid});
+    var el = document.getElementById('subcard-' + cid);
+    if (el) el.classList.add('active-card');
+    var parentId = null;
+    {% for cat in categories %}
+    {% for s in cat.subs %}
+    if (cid === {{ s.id }}) parentId = {{ cat.id }};
+    {% endfor %}
+    {% endfor %}
+    var sp = new URLSearchParams(window.location.search);
+    var params = {cat: cid, parent: parentId};
+    if (sp.get('status')) params.status = sp.get('status');
+    ajaxNavigate(cleanParams(params));
 }
 
 // 页面加载时恢复大类展开状态

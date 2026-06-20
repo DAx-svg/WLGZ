@@ -1,0 +1,128 @@
+================================================================================
+  物料全流程追溯系统 v2.4 — 会话记录（第二部分：Bug修复 + 新功能）
+  日期：2026-06-11
+  项目路径：C:\Users\1\material-tracking
+  部署地址：https://daxsvg.pythonanywhere.com
+  GitHub：https://github.com/DAx-svg/WLGZ
+================================================================================
+
+目录
+----
+  一、Bug 修复（5 个）
+  二、新功能 1：寄修出库流程
+  三、新功能 2：分类筛选组合过滤
+  四、Git 提交记录
+  五、部署步骤
+
+================================================================================
+  一、Bug 修复（5 个）
+================================================================================
+
+🔴 Bug 1：CSV 导出 500 错误（app.py:1514）
+  根因：_make_csv_response() 中 row.get(c, '') — sqlite3.Row 没有 .get() 方法
+  修复：增加 isinstance(row, dict) 判断，Row 对象用下标访问
+  影响：5 个导出端点（物料/出库/售后/故障/操作日志）全部恢复
+
+🔴 Bug 2：操作日志不记录（app.py:291-302）
+  根因：log_operation() 缺少 db.commit()，INSERT 事务被回滚
+  修复：添加 db.commit()
+
+🟡 Bug 3：物料时间线 500 错误（app.py:1758-1794）
+  根因：同 Bug 1，api_timeline() 中多处 r.get() 调用
+  修复：全部替换为 r['key'] 下标访问
+
+🟢 Bug 4：log_operation 异常静默吞掉（app.py:301-302）
+  修复：except Exception as e + print(..., file=sys.stderr)
+
+🔴 Bug 5（新发现）：CSV 导出连接断开（app.py:1521）
+  根因：Content-Disposition 头包含中文文件名（如"物料清单.csv"），
+        HTTP 头部只支持 latin-1 编码，触发 UnicodeEncodeError，
+        Werkzeug 直接断开连接
+  修复：使用 RFC 5987 规范的 filename*=UTF-8'' 编码
+        from urllib.parse import quote
+        resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
+
+================================================================================
+  二、新功能 1：寄修出库流程
+================================================================================
+
+需求背景：
+  SN 报故障时需要寄给供应商维修，应能登记寄修出库、供应商、快递信息，
+  修回后恢复入库状态。
+
+数据库变更（fault_records 表新增 4 列）：
+  - repair_type     TEXT DEFAULT '本地维修'   -- '本地维修' | '寄修'
+  - supplier        TEXT DEFAULT ''           -- 供应商名称
+  - return_courier  TEXT DEFAULT ''           -- 修回快递公司
+  - return_tracking TEXT DEFAULT ''           -- 修回快递单号
+
+新增物料状态：寄修中
+
+后端修改（app.py）：
+  1. api_fault（故障创建）
+     - 接受 repair_type, supplier, courier_company, tracking_number
+     - 若 repair_type='寄修'：验证必填 → 创建 outbound_records（purpose="寄修出库"）
+       → 状态改为"寄修中"
+     - 本地维修保持原有逻辑不变
+
+  2. api_fault_resolve（故障修复）
+     - 接受 return_courier, return_tracking
+     - 若 repair_type='寄修'：保存寄回快递信息 → 恢复状态到 previous_status
+     - 调用 log_operation 记录入库
+
+  3. 状态守卫：api_outbound、api_restock、api_delete_material 增加"寄修中"拦截
+  4. 首页统计：stats 增加 repair 计数，品类子统计增加"寄修中" CASE
+  5. detail() 路由：传出 active_fault_repair_type 变量
+
+前端修改（detail.html）：
+  - 故障申报弹窗：新增"需要寄修"复选框，勾选后显示供应商/快递公司/快递单号
+  - 故障修复弹窗：新增"寄回快递公司"和"寄回快递单号"（仅寄修故障显示）
+  - 按钮逻辑："寄修中"等同于"故障中"，禁用出库/售后/入库
+  - 故障面板：寄修故障显示"维修方式：寄修 → 供应商名"和寄回信息
+
+前端修改（index.html）：
+  - 统计卡片新增"寄修中"
+  - 状态标签增加"寄修中"，用途标签增加"寄修出库"
+  - 子品类统计增加"寄修中"框
+
+================================================================================
+  三、新功能 2：分类筛选组合过滤
+================================================================================
+
+Bug 1：选择品类后点状态卡片，品类筛选丢失
+  根因：后端 if/elif 链中 status 和 cat 互斥
+  修复：将 filter_status、sub_cat_id、parent_id、show_orphan 改为可组合的
+        WHERE ... AND ... AND ... 逻辑
+
+Bug 2：点状态卡片后品类栏折叠
+  根因：状态卡片 onclick="window.location='/?status=X'" 丢失 cat/parent 参数
+  修复：
+    - 新增 JS 函数 buildUrl(newParams) — 基于当前 URL 参数构建新 URL
+    - 新增 JS 函数 navigateWithStatus(status) — 保留 cat/parent/orphan 参数
+    - 所有统计卡片 onclick 改为 navigateWithStatus('X')
+    - toggleParent/filterByCat 改用 buildUrl() 保留已有 status 参数
+
+================================================================================
+  四、Git 提交记录
+================================================================================
+
+  aa8a05a feat: 寄修出库流程 + 修复分类筛选组合过滤
+          3 files changed, 245 insertions(+), 65 deletions(-)
+
+  88f76f4 fix: 修复CSV导出/操作日志/时间线共5个Bug
+          1 file changed, 15 insertions(+), 9 deletions(-)
+
+================================================================================
+  五、部署步骤
+================================================================================
+
+  1. 打开 https://www.pythonanywhere.com 登录
+  2. Consoles → Bash：
+     cd ~/WLGZ
+     git pull
+  3. Web 标签页 → Reload
+
+================================================================================
+  生成时间：2026-06-11
+  模型：DeepSeek V4 Pro（由 Anthropic Claude Agent SDK 调度运行）
+================================================================================

@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物料追溯系统 v2.0</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background: #f5f7fa; }
+        .category-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .cat-pill {
+            padding: 8px 20px; border-radius: 20px; border: 2px solid #dee2e6;
+            background: white; cursor: pointer; font-weight: 500; transition: all 0.2s;
+            user-select: none;
+        }
+        .cat-pill:hover { border-color: #0d6efd; background: #e7f1ff; }
+        .cat-pill.active { background: #0d6efd; color: white; border-color: #0d6efd; }
+        .sub-card {
+            border-left: 4px solid #0d6efd; margin-bottom: 12px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .sub-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .sub-card.active-card { border-left-color: #198754; background: #f0fff4; }
+        .stat-box { text-align: center; padding: 6px 12px; border-radius: 8px; background: #f8f9fa; min-width: 70px; }
+        .stat-box .num { font-size: 1.3rem; font-weight: 700; }
+        .stat-box .lbl { font-size: 0.7rem; color: #888; }
+        .stat-box.green  .num { color: #198754; }
+        .stat-box.yellow .num { color: #e6a817; }
+        .stat-box.red    .num { color: #dc3545; }
+        .sn-tag { display: inline-block; background: #e9ecef; padding: 2px 8px; border-radius: 4px;
+                  margin: 2px; font-size: 0.8rem; font-family: monospace; cursor: pointer; }
+        .sn-tag:hover { background: #0d6efd; color: white; }
+        .clickable-row { cursor: pointer; }
+        .clickable-row:hover { background-color: #e9ecef !important; }
+        .status-badge { font-size: 0.85rem; }
+        .section-title { font-size: 0.9rem; font-weight: 600; color: #666; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+<div class="container-fluid px-4">
+
+    <!-- 顶栏 -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0"><i class="bi bi-box-seam"></i> 物料全流程追溯系统</h4>
+        <div class="d-flex flex-wrap gap-1">
+            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#catManageModal">
+                <i class="bi bi-gear"></i> 品类管理
+            </button>
+<a href="/outbounds" class="btn btn-outline-info btn-sm">
+                <i class="bi bi-truck"></i> 出库记录
+            </a>
+            <a href="/batch-outbound" class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-box-arrow-right"></i> 批量出库
+            </a>
+            <a href="/inventory" class="btn btn-outline-teal btn-sm" style="border-color:#20c997;color:#20c997;">
+                <i class="bi bi-clipboard-check"></i> 库存盘点
+            </a>
+            <a href="/add" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-lg"></i> 添加新物料
+            </a>
+            <div class="dropdown d-inline-block">
+                <button class="btn btn-outline-success btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="bi bi-download"></i> 导出
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="/api/export/materials"><i class="bi bi-file-earmark-spreadsheet"></i> 物料清单 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/outbounds"><i class="bi bi-truck"></i> 出库记录 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/aftersales"><i class="bi bi-wrench"></i> 售后工单 CSV</a></li>
+                    <li><a class="dropdown-item" href="/api/export/faults"><i class="bi bi-exclamation-triangle"></i> 故障记录 CSV</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/api/export/operation_logs"><i class="bi bi-journal-text"></i> 操作日志 CSV</a></li>
+                </ul>
+            </div>
+            <button class="btn btn-outline-dark btn-sm" onclick="window.location='/logs'" title="查看操作日志">
+                <i class="bi bi-journal-text"></i> 操作日志
+            </button>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-2 mb-3">
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-primary" style="cursor:pointer;" onclick="window.location='/'">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold text-primary">32</div>
+                        <small class="text-muted text-nowrap">总物料</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-success" style="cursor:pointer;" onclick="navigateWithStatus('在库')">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold text-success">11</div>
+                        <small class="text-muted text-nowrap">在库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-warning" style="cursor:pointer;" onclick="navigateWithStatus('已出库')">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold" style="color:#e6a817;">17</div>
+                        <small class="text-muted text-nowrap">已出库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-info" style="cursor:pointer;" onclick="window.location='/?month_in=1'">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold text-info">32</div>
+                        <small class="text-muted text-nowrap">本月入库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-secondary" style="cursor:pointer;" onclick="window.location='/?month_out=1'">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold text-secondary">22</div>
+                        <small class="text-muted text-nowrap">本月出库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-danger" style="cursor:pointer;" onclick="navigateWithPurpose('售后出库')">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold text-danger">4</div>
+                        <small class="text-muted text-nowrap">售后出库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-warning" style="cursor:pointer;background:#fff0f0;" onclick="navigateWithPurpose('故障出库','待寄回')">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold" style="color:#ff6b6b;">4</div>
+                        <small class="text-muted text-nowrap">故障寄修出库</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4 col-sm-3 col-md-2">
+                <div class="card text-center border-warning" style="cursor:pointer;background:#fff3cd;" onclick="navigateWithReturning()">
+                    <div class="card-body p-2">
+                        <div class="fs-4 fw-bold" style="color:#e67e22;">9</div>
+                        <small class="text-muted text-nowrap">待寄回</small>
+                    </div>
+                </div>
+            </div>
+        </div></div>
+
+    <!-- 图表折叠面板 -->
+    <div class="mb-3">
+        <button id="chartBtn" class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#chartPanel" >
+            <i class="bi bi-graph-up"></i> 品类趋势分析
+        </button>
+    </div>
+    <div class="collapse" id="chartPanel">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <!-- 筛选栏 -->
+                <div class="row g-2 mb-3 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">起始月份</label>
+                        <input type="month" id="chartMonthStart" class="form-control form-control-sm" style="width:160px;">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">结束月份</label>
+                        <input type="month" id="chartMonthEnd" class="form-control form-control-sm" style="width:160px;">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">品类</label>
+                        <select id="chartParentSelect" class="form-select form-select-sm" style="width:150px;">
+                            <option value="">-- 全部分类 --</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">&nbsp;</label>
+                        <select id="chartSubSelect" class="form-select form-select-sm" style="width:150px;">
+                            <option value="">-- 全部小类 --</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small mb-1">&nbsp;</label>
+                        <button id="chartRefreshBtn" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> 查询</button>
+                    </div>
+                </div>
+
+                <!-- KPI 摘要行 -->
+                <div class="row g-2 mb-3" id="chartKpiRow" style="display:none;">
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">期初在库</div>
+                                <div class="fs-5 fw-bold text-success" id="kpiStartStock">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">期末在库</div>
+                                <div class="fs-5 fw-bold text-primary" id="kpiEndStock">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">出库合计</div>
+                                <div class="fs-5 fw-bold" style="color:#e6a817;" id="kpiTotalOut">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">月均出库</div>
+                                <div class="fs-5 fw-bold text-info" id="kpiAvgOut">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <div class="card border-0 bg-light" style="border-radius:8px;">
+                            <div class="card-body p-2 px-3 text-center">
+                                <div class="small text-muted">库存变化</div>
+                                <div class="fs-5 fw-bold" id="kpiStockChange">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 组合图：堆叠柱状图(出库) + 折线(在库) -->
+                <div style="position:relative;height:320px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+                <p class="text-muted small mt-2 mb-0"><i class="bi bi-info-circle"></i> 显示所选品类各出库目的和库存量在时间轴上的月度变化趋势</p>
+            </div>
+        </div>
+    </div><!-- SN 搜索 <!-- SN 搜索 -->
+    <form method="GET" class="mb-3">
+        <div class="input-group" style="max-width:420px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" class="form-control" name="search" placeholder="搜 SN、备注、联系人、公司（空格多关键词）" value="">
+            <button class="btn btn-outline-primary" type="submit">搜索</button>
+            
+        </div>
+    </form>
+
+    <!-- 品类导航栏 -->
+    <div class="category-bar">
+        <span class="cat-pill active"
+              onclick="window.location='/'">
+            全部 <small class="text-muted text-nowrap">(32)</small>
+        </span>
+        
+        <span class="cat-pill cat-parent " data-cid="15"
+              onclick="toggleParent(15)">
+            RB主板
+            <small class="text-muted text-nowrap">(15)</small>
+        </span>
+        
+        <span class="cat-pill cat-parent " data-cid="17"
+              onclick="toggleParent(17)">
+            枪头
+            <small class="text-muted text-nowrap">(0)</small>
+        </span>
+        
+        <span class="cat-pill cat-parent " data-cid="18"
+              onclick="toggleParent(18)">
+            整机
+            <small class="text-muted text-nowrap">(1)</small>
+        </span>
+        
+        <span class="cat-pill cat-parent " data-cid="20"
+              onclick="toggleParent(20)">
+            屏幕
+            <small class="text-muted text-nowrap">(16)</small>
+        </span>
+        
+        
+    </div>
+
+    <!-- 小类卡片区域 -->
+    
+    <div class="sub-cards-container" id="parent-15" style="display:none;">
+        
+        <div class="card sub-card shadow-sm" id="subcard-16"
+             onclick="filterByCat(16)">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <!-- 名称和统计 -->
+                    <div style="min-width: 200px;">
+                        <h6 class="mb-2">
+                            <i class="bi bi-folder2-open text-primary"></i>
+                            RB-01
+                            <span class="badge bg-secondary ms-1">3 件</span>
+                        </h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="stat-box" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16})" title="按品类筛选全部">
+                                <div class="num">3</div>
+                                <div class="lbl">总计</div>
+                            </div>
+                            <div class="stat-box green" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16,status:'在库'})" title="品类 + 在库">
+                                <div class="num">2</div>
+                                <div class="lbl">在库</div>
+                            </div>
+                            <div class="stat-box yellow" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16,status:'已出库'})" title="品类 + 已出库">
+                                <div class="num">1</div>
+                                <div class="lbl">已出库</div>
+                            </div>
+                            <div class="stat-box red" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16,status:'售后中'})" title="品类 + 售后中">
+                                <div class="num">0</div>
+                                <div class="lbl">售后中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff3cd;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16,status:'故障中'})" title="品类 + 故障中">
+                                <div class="num" style="color:#fd7e14;">0</div>
+                                <div class="lbl">故障中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff0f0;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:16,status:'寄修中'})" title="品类 + 寄修中">
+                                <div class="num" style="color:#ff6b6b;">0</div>
+                                <div class="lbl">寄修中</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SN 列表 -->
+                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                        
+                        <div class="section-title">包含物料：</div>
+                        <div>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2505V0303KH103'"
+                                  title="点击查看详情">SN:2505V0303KH103</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2505V0303KH102'"
+                                  title="点击查看详情">SN:2505V0303KH102</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2505V0303KH101'"
+                                  title="点击查看详情">SN:2505V0303KH101</span>
+                            
+                            
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card sub-card shadow-sm" id="subcard-22"
+             onclick="filterByCat(22)">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <!-- 名称和统计 -->
+                    <div style="min-width: 200px;">
+                        <h6 class="mb-2">
+                            <i class="bi bi-folder2-open text-primary"></i>
+                            RB-02
+                            <span class="badge bg-secondary ms-1">12 件</span>
+                        </h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="stat-box" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22})" title="按品类筛选全部">
+                                <div class="num">12</div>
+                                <div class="lbl">总计</div>
+                            </div>
+                            <div class="stat-box green" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22,status:'在库'})" title="品类 + 在库">
+                                <div class="num">1</div>
+                                <div class="lbl">在库</div>
+                            </div>
+                            <div class="stat-box yellow" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22,status:'已出库'})" title="品类 + 已出库">
+                                <div class="num">11</div>
+                                <div class="lbl">已出库</div>
+                            </div>
+                            <div class="stat-box red" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22,status:'售后中'})" title="品类 + 售后中">
+                                <div class="num">0</div>
+                                <div class="lbl">售后中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff3cd;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22,status:'故障中'})" title="品类 + 故障中">
+                                <div class="num" style="color:#fd7e14;">0</div>
+                                <div class="lbl">故障中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff0f0;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:22,status:'寄修中'})" title="品类 + 寄修中">
+                                <div class="num" style="color:#ff6b6b;">0</div>
+                                <div class="lbl">寄修中</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SN 列表 -->
+                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                        
+                        <div class="section-title">包含物料：</div>
+                        <div>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL112'"
+                                  title="点击查看详情">SN:2601V0403LL112</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL111'"
+                                  title="点击查看详情">SN:2601V0403LL111</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL110'"
+                                  title="点击查看详情">SN:2601V0403LL110</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL109'"
+                                  title="点击查看详情">SN:2601V0403LL109</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL108'"
+                                  title="点击查看详情">SN:2601V0403LL108</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL107'"
+                                  title="点击查看详情">SN:2601V0403LL107</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403LL106'"
+                                  title="点击查看详情">SN:2601V0403LL106</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403KL105'"
+                                  title="点击查看详情">SN:2601V0403KL105</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403KL104'"
+                                  title="点击查看详情">SN:2601V0403KL104</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403JL101'"
+                                  title="点击查看详情">SN:2601V0403JL101</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403JL102'"
+                                  title="点击查看详情">SN:2601V0403JL102</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SN:2601V0403JL103'"
+                                  title="点击查看详情">SN:2601V0403JL103</span>
+                            
+                            
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="sub-cards-container" id="parent-17" style="display:none;">
+        
+    </div>
+    
+    <div class="sub-cards-container" id="parent-18" style="display:none;">
+        
+        <div class="card sub-card shadow-sm" id="subcard-19"
+             onclick="filterByCat(19)">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <!-- 名称和统计 -->
+                    <div style="min-width: 200px;">
+                        <h6 class="mb-2">
+                            <i class="bi bi-folder2-open text-primary"></i>
+                            整机不带机器人
+                            <span class="badge bg-secondary ms-1">1 件</span>
+                        </h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="stat-box" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19})" title="按品类筛选全部">
+                                <div class="num">1</div>
+                                <div class="lbl">总计</div>
+                            </div>
+                            <div class="stat-box green" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19,status:'在库'})" title="品类 + 在库">
+                                <div class="num">0</div>
+                                <div class="lbl">在库</div>
+                            </div>
+                            <div class="stat-box yellow" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19,status:'已出库'})" title="品类 + 已出库">
+                                <div class="num">1</div>
+                                <div class="lbl">已出库</div>
+                            </div>
+                            <div class="stat-box red" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19,status:'售后中'})" title="品类 + 售后中">
+                                <div class="num">0</div>
+                                <div class="lbl">售后中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff3cd;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19,status:'故障中'})" title="品类 + 故障中">
+                                <div class="num" style="color:#fd7e14;">0</div>
+                                <div class="lbl">故障中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff0f0;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:19,status:'寄修中'})" title="品类 + 寄修中">
+                                <div class="num" style="color:#ff6b6b;">0</div>
+                                <div class="lbl">寄修中</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SN 列表 -->
+                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                        
+                        <div class="section-title">包含物料：</div>
+                        <div>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/SS-35A20008726'"
+                                  title="点击查看详情">SS-35A20008726</span>
+                            
+                            
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="sub-cards-container" id="parent-20" style="display:none;">
+        
+        <div class="card sub-card shadow-sm" id="subcard-21"
+             onclick="filterByCat(21)">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <!-- 名称和统计 -->
+                    <div style="min-width: 200px;">
+                        <h6 class="mb-2">
+                            <i class="bi bi-folder2-open text-primary"></i>
+                            迪文DMG10600T70_A5WTR
+                            <span class="badge bg-secondary ms-1">16 件</span>
+                        </h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="stat-box" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21})" title="按品类筛选全部">
+                                <div class="num">16</div>
+                                <div class="lbl">总计</div>
+                            </div>
+                            <div class="stat-box green" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21,status:'在库'})" title="品类 + 在库">
+                                <div class="num">8</div>
+                                <div class="lbl">在库</div>
+                            </div>
+                            <div class="stat-box yellow" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21,status:'已出库'})" title="品类 + 已出库">
+                                <div class="num">4</div>
+                                <div class="lbl">已出库</div>
+                            </div>
+                            <div class="stat-box red" style="cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21,status:'售后中'})" title="品类 + 售后中">
+                                <div class="num">0</div>
+                                <div class="lbl">售后中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff3cd;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21,status:'故障中'})" title="品类 + 故障中">
+                                <div class="num" style="color:#fd7e14;">0</div>
+                                <div class="lbl">故障中</div>
+                            </div>
+                            <div class="stat-box" style="background:#fff0f0;cursor:pointer;" onclick="event.stopPropagation();window.location=buildUrl({cat:21,status:'寄修中'})" title="品类 + 寄修中">
+                                <div class="num" style="color:#ff6b6b;">4</div>
+                                <div class="lbl">寄修中</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SN 列表 -->
+                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                        
+                        <div class="section-title">包含物料：</div>
+                        <div>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271116'"
+                                  title="点击查看详情">26271116</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271115'"
+                                  title="点击查看详情">26271115</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271114'"
+                                  title="点击查看详情">26271114</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271113'"
+                                  title="点击查看详情">26271113</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271112'"
+                                  title="点击查看详情">26271112</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271111'"
+                                  title="点击查看详情">26271111</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271110'"
+                                  title="点击查看详情">26271110</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271109'"
+                                  title="点击查看详情">26271109</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271108'"
+                                  title="点击查看详情">26271108</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271107'"
+                                  title="点击查看详情">26271107</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271106'"
+                                  title="点击查看详情">26271106</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271105'"
+                                  title="点击查看详情">26271105</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271104'"
+                                  title="点击查看详情">26271104</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271103'"
+                                  title="点击查看详情">26271103</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271102'"
+                                  title="点击查看详情">26271102</span>
+                            
+                            <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/26271101'"
+                                  title="点击查看详情">26271101</span>
+                            
+                            
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+
+    <!-- 物料/售后记录表格 -->
+    <div class="card shadow-sm mt-3">
+        <div class="card-header d-flex justify-content-between">
+            <span>
+                
+                状态「已出库」：
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                <strong>17</strong> 条记录
+            </span>
+            <div>
+                
+                <button class="btn btn-outline-secondary btn-sm me-2" id="manageBtn" onclick="toggleManage()">管理</button>
+                <span id="manageActions" style="display:none;">
+                    <button class="btn btn-danger btn-sm me-2" id="batchDelBtn" onclick="batchDelete()" disabled>🗑 批量删除</button>
+                    <button class="btn btn-outline-secondary btn-sm me-2" onclick="toggleManage()">取消</button>
+                </span>
+                
+                <a href="/" class="btn btn-outline-secondary btn-sm">← 返回全部</a>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            
+            <!-- 物料表格 -->
+            
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width:40px;display:none;" class="mgmt-cb"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
+                            <th>SN</th><th>品类</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL112" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL112</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">
+                                
+                                <span class="badge bg-danger">售后出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">485通讯失效 无法与PLC进行485串口通讯</div>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row">2026-06-13 14:58:21</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL112'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL112')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="26271116" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row"><span class="fw-bold text-primary">26271116</span></td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">迪文DMG10600T70_A5WTR</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">RB-P</td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row">2026-06-13 09:35:52</td>
+                            <td onclick="window.location.href='/detail/26271116'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('26271116')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL111" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL111</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row">2026-06-12 17:08:56</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL111'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL111')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL110" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL110</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">
+                                
+                                <span class="badge bg-info text-dark">其他出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">寄到迪文科技检测是否是板卡原因引发屏幕通讯故障</div>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row">2026-06-12 15:29:43</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL110'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL110')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2505V0303KH101" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row"><span class="fw-bold text-primary">SN:2505V0303KH101</span></td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-01</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">RB-01 v.3 202505</td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">RB-02 03K1</td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row">2026-06-11 13:56:09</td>
+                            <td onclick="window.location.href='/detail/SN:2505V0303KH101'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2505V0303KH101')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL108" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL108</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row">2026-06-10 10:26:33</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL108'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="送丝机配置 32.4   1.5">送丝机配置 32.4   1.5</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL108')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL107" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL107</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row">2026-06-10 09:09:00</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL107'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL107')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403LL106" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403LL106</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">RB-02 03L/03LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">
+                                
+                                <span class="badge bg-danger">售后出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">连续两个屏幕通讯故障，需寄换排除是否由板卡引起</div>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row">2026-06-09 14:36:44</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403LL106'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="V0.4 绿色板卡">V0.4 绿色板卡</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403LL106')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403KL105" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403KL105</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">RB-02 V0.4 202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">RB02-03 L/LA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row">2026-06-07 15:57:18</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL105'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="此版本号03K/03KA，和黑色板卡03K混淆，注意区分">此版本号03K/03KA，和黑色板卡03K混淆，注意区分</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403KL105')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403KL104" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403KL104</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">RB-02 V0.4 202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">RB02-03KA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">
+                                
+                                <span class="badge bg-info text-dark">其他出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">思创借用</div>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row">2026-06-07 10:14:21</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403KL104'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="此版本号03K/03KA，和黑色板卡03K混淆，注意区分">此版本号03K/03KA，和黑色板卡03K混淆，注意区分</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403KL104')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403JL101" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403JL101</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">RB-02 03J/03JA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row">2026-06-06 14:52:57</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL101'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403JL101')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403JL102" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403JL102</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">RB-02 03J/03JA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row">2026-06-06 14:52:57</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL102'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403JL102')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SN:2601V0403JL103" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row"><span class="fw-bold text-primary">SN:2601V0403JL103</span></td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">RB-02</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">RB-02  V0.4  202601</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">RB-02 03J/03JA</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row">2026-06-06 14:52:57</td>
+                            <td onclick="window.location.href='/detail/SN:2601V0403JL103'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="">-</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SN:2601V0403JL103')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="26271107" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row"><span class="fw-bold text-primary">26271107</span></td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">迪文DMG10600T70_A5WTR</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">RB-P</td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row">2026-06-06 11:48:03</td>
+                            <td onclick="window.location.href='/detail/26271107'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="250822   广东逸升退回，屏幕外观有刮痕，功能正常。">250822   广东逸升退回，屏幕外观有刮痕，功能正常。</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('26271107')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="26271105" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row"><span class="fw-bold text-primary">26271105</span></td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">迪文DMG10600T70_A5WTR</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">RB-P</td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">
+                                
+                                <span class="badge bg-danger">售后出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">刚上电就通讯故障，需寄换等故障件寄回排查原因</div>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>
+                            </td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row">2026-06-06 11:37:09</td>
+                            <td onclick="window.location.href='/detail/26271105'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="250822  广东逸升退回 功能正常">250822  广东逸升退回 功能正常</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('26271105')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="26271104" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row"><span class="fw-bold text-primary">26271104</span></td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">迪文DMG10600T70_A5WTR</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">RB-P</td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">
+                                
+                                <span class="badge bg-danger">售后出库</span>
+                                
+                                <div class="text-dark mt-1" style="font-size:0.8rem;max-width:160px;word-wrap:break-word;">客户反馈原屏幕通讯故障，需重新寄换</div>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;">待寄回</span>
+                            </td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row">2026-06-06 11:30:16</td>
+                            <td onclick="window.location.href='/detail/26271104'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="250882   广东逸升退回，功能正常">250882   广东逸升退回，功能正常</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('26271104')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                        <tr>
+                            <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="SS-35A20008726" onchange="updateBatchDelBtn()"></td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row"><span class="fw-bold text-primary">SS-35A20008726</span></td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">
+                                
+                                <span class="badge bg-secondary">整机不带机器人</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">-</td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">
+                                
+                                <span class="badge bg-warning text-dark status-badge">已出库</span>
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">
+                                
+                                <span class="badge bg-primary text-white">销售出库</span>
+                                
+                                
+                                
+                            </td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row">2026-06-02 16:05:51</td>
+                            <td onclick="window.location.href='/detail/SS-35A20008726'" class="clickable-row" style="max-width:180px;"><small class="text-muted text-truncate d-block" title="激光器60006319G3000A26502315
+冷水机120260512597291K
+
+">激光器60006319G3000A26502315
+冷水机120260512597291K
+
+</small></td>
+                            <td><button class="btn btn-outline-danger btn-sm mgmt-cb" style="display:none;" onclick="event.stopPropagation(); deleteMaterial('SS-35A20008726')" title="删除物料">🗑</button></td>
+                        </tr>
+                        
+                    </tbody>
+                </table>
+            </div>
+            
+            
+        </div>
+    </div>
+
+</div>
+
+<!-- ============ 品类管理弹窗 ============ -->
+<div class="modal fade" id="catManageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-gear"></i> 品类管理</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- 大类 -->
+                    <div class="col-md-6">
+                        <h6>大类</h6>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="newParentName" placeholder="新大类名称">
+                            <button class="btn btn-outline-primary" onclick="addCategory(null)">添加</button>
+                        </div>
+                        <ul class="list-group mb-3" id="parentList"></ul>
+                    </div>
+                    <!-- 小类 -->
+                    <div class="col-md-6">
+                        <h6>小类（需先选大类）</h6>
+                        <div class="input-group mb-2">
+                            <select class="form-select" id="subParentSelect">
+                                <option value="">-- 选择所属大类 --</option>
+                            </select>
+                        </div>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" id="newSubName" placeholder="新小类名称">
+                            <button class="btn btn-outline-primary" onclick="addSubCategory()">添加</button>
+                        </div>
+                        <ul class="list-group" id="subList"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:99999;">
+    <div id="resultToast" class="toast"><div class="toast-body" id="toastBody"></div></div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// 检测 bfcache 恢复时强制刷新，确保状态最新
+window.addEventListener('pageshow',function(e){if(e.persisted)location.reload();});
+
+// ======= URL 参数工具 =======
+function buildUrl(newParams) {
+    var sp = new URLSearchParams(window.location.search);
+    for (var k in newParams) {
+        if (newParams[k] === null || newParams[k] === '') {
+            sp.delete(k);
+        } else {
+            sp.set(k, newParams[k]);
+        }
+    }
+    var qs = sp.toString();
+    return '/' + (qs ? '?' + qs : '');
+}
+
+// 状态筛选，保留已有 cat/parent/orphan 参数，清除用途/寄回参数
+function navigateWithStatus(status) {
+    var sp = new URLSearchParams(window.location.search);
+    var params = {status: status};
+    if (sp.get('cat')) params.cat = sp.get('cat');
+    if (sp.get('parent')) params.parent = sp.get('parent');
+    if (sp.get('orphan')) params.orphan = sp.get('orphan');
+    params.purpose = null;
+    params.return_status = null;
+    params.returning = null;
+    window.location = buildUrl(params);
+}
+
+// 用途筛选，保留已有 cat/parent/orphan 参数，清除状态参数
+function navigateWithPurpose(purpose, returnStatus) {
+    var sp = new URLSearchParams(window.location.search);
+    var params = {purpose: purpose};
+    if (returnStatus) params.return_status = returnStatus;
+    if (sp.get('cat')) params.cat = sp.get('cat');
+    if (sp.get('parent')) params.parent = sp.get('parent');
+    if (sp.get('orphan')) params.orphan = sp.get('orphan');
+    params.status = null;
+    params.returning = null;
+    window.location = buildUrl(params);
+}
+
+// 待寄回筛选，保留已有 cat/parent/orphan 参数，清除其他
+function navigateWithReturning() {
+    var sp = new URLSearchParams(window.location.search);
+    var params = {returning: '1'};
+    if (sp.get('cat')) params.cat = sp.get('cat');
+    if (sp.get('parent')) params.parent = sp.get('parent');
+    if (sp.get('orphan')) params.orphan = sp.get('orphan');
+    params.status = null;
+    params.purpose = null;
+    params.return_status = null;
+    window.location = buildUrl(params);
+}
+
+// ======= 品类展开/收起 =======
+let activeParent = null;
+
+function toggleParent(cid) {
+    if (activeParent === cid) {
+        activeParent = null;
+        window.location = buildUrl({parent: null});
+    } else {
+        activeParent = cid;
+        window.location = buildUrl({parent: cid, cat: null});  // 切大类时清除小类筛选
+    }
+}
+
+function filterByCat(cid) {
+    document.querySelectorAll('.sub-card').forEach(c => c.classList.remove('active-card'));
+    document.getElementById('subcard-' + cid)?.classList.add('active-card');
+    // 找到该小类所属的大类ID，同步更新parent
+    var parentId = null;
+    
+    
+    if (cid === 16) parentId = 15;
+    
+    if (cid === 22) parentId = 15;
+    
+    
+    
+    
+    
+    if (cid === 19) parentId = 18;
+    
+    
+    
+    if (cid === 21) parentId = 20;
+    
+    
+    window.location = buildUrl({cat: cid, parent: parentId});
+}
+
+// 页面加载时恢复大类展开状态
+
+// 页面加载时恢复子品类高亮
+
+
+// ======= Toast =======
+function showToast(msg, ok) {
+    const el = document.getElementById('resultToast');
+    document.getElementById('toastBody').textContent = msg;
+    el.classList.add(ok ? 'bg-success' : 'bg-danger', 'text-white');
+    new bootstrap.Toast(el).show();
+}
+
+async function deleteMaterial(sn) {
+    if (!confirm('确定删除物料 ' + sn + '？此操作不可恢复！')) return;
+    const resp = await fetch('/api/material/delete/' + sn, {method:'POST'});
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(() => location.reload(), 500);
+}
+
+// ======= 管理模式 =======
+function toggleManage() {
+    var showing = document.getElementById('manageActions').style.display !== 'none';
+    var cbs = document.querySelectorAll('.mgmt-cb');
+    if (showing) {
+        // 退出管理模式
+        document.getElementById('manageBtn').style.display = '';
+        document.getElementById('manageActions').style.display = 'none';
+        cbs.forEach(function(el) { el.style.display = 'none'; });
+        document.querySelectorAll('.mat-cb').forEach(function(cb) { cb.checked = false; });
+        document.getElementById('selectAll').checked = false;
+    } else {
+        // 进入管理模式
+        document.getElementById('manageBtn').style.display = 'none';
+        document.getElementById('manageActions').style.display = '';
+        cbs.forEach(function(el) { el.style.display = ''; });
+    }
+    updateBatchDelBtn();
+}
+// ======= 批量删除 =======
+function toggleSelectAll() {
+    var checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.mat-cb').forEach(cb => cb.checked = checked);
+    updateBatchDelBtn();
+}
+function updateBatchDelBtn() {
+    var any = document.querySelectorAll('.mat-cb:checked').length > 0;
+    document.getElementById('batchDelBtn').disabled = !any;
+}
+async function batchDelete() {
+    var cbs = document.querySelectorAll('.mat-cb:checked');
+    if (!cbs.length) return;
+    var sns = Array.from(cbs).map(cb => cb.value);
+    if (!confirm('确定删除选中的 ' + sns.length + ' 个物料？此操作不可恢复！')) return;
+    var resp = await fetch('/api/material/batch_delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({sns: sns})
+    });
+    var data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) setTimeout(() => location.reload(), 600);
+}
+
+// ======= 品类管理 =======
+let catMgmtChanged = false;
+window._catNames = {};
+
+async function loadCategoryManager() {
+    const resp = await fetch('/api/categories');
+    const data = await resp.json();
+    const parentList = document.getElementById('parentList');
+    const subSelect = document.getElementById('subParentSelect');
+    const subList = document.getElementById('subList');
+    parentList.innerHTML = '';
+    subSelect.innerHTML = '<option value="">-- 选择所属大类 --</option>';
+    subList.innerHTML = '';
+    window._catNames = {};
+    data.parents.forEach(p => {
+        window._catNames[p.id] = p.name;
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = '<span>' + p.name + '</span>\
+            <span>\
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="editCatPrompt(' + p.id + ')">✏️</button>\
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(' + p.id + ')">🗑</button>\
+            </span>';
+        parentList.appendChild(li);
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        subSelect.appendChild(opt);
+    });
+    data.subs.forEach(s => {
+        window._catNames[s.id] = s.name;
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = '<span><small class="text-muted text-nowrap">' + s.parent_name + ' →</small> ' + s.name + '</span>\
+            <span>\
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="editCatPrompt(' + s.id + ')">✏️</button>\
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCat(' + s.id + ')">🗑</button>\
+            </span>';
+        subList.appendChild(li);
+    });
+}
+
+function editCatPrompt(id) {
+    const oldName = window._catNames[id] || '';
+    const newName = prompt('新名称:', oldName);
+    if (newName && newName.trim() && newName.trim() !== oldName) editCat(id, newName.trim());
+}
+
+async function addCategory(parentId) {
+    const inputId = parentId ? 'newSubName' : 'newParentName';
+    const name = document.getElementById(inputId).value.trim();
+    if (!name) return showToast('请输入品类名称', false);
+    const resp = await fetch('/api/category', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: name, parent_id: parentId})
+    });
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) { document.getElementById(inputId).value = ''; catMgmtChanged = true; loadCategoryManager(); }
+}
+
+async function addSubCategory() {
+    const parentId = document.getElementById('subParentSelect').value;
+    if (!parentId) return showToast('请先选择所属大类', false);
+    await addCategory(parseInt(parentId));
+}
+
+async function editCat(id, newName) {
+    const resp = await fetch('/api/category/' + id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: newName})
+    });
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) { catMgmtChanged = true; loadCategoryManager(); }
+}
+
+async function deleteCat(id) {
+    if (!confirm('确定删除此品类及其子品类？关联物料将取消分类。')) return;
+    const resp = await fetch('/api/category/' + id, {method:'DELETE'});
+    const data = await resp.json();
+    showToast(data.message, data.success);
+    if (data.success) { catMgmtChanged = true; loadCategoryManager(); }
+}
+
+// 弹窗打开时加载品类数据，关闭时若数据有变更则刷新页面
+document.getElementById('catManageModal').addEventListener('show.bs.modal', function() {
+    catMgmtChanged = false;
+    loadCategoryManager();
+});
+document.getElementById('catManageModal').addEventListener('hidden.bs.modal', function() {
+    if (catMgmtChanged) location.reload();
+});
+// ====== 品类趋势分析 ======
+let trendChartInstance = null;
+
+async function loadChartCategories() {
+    const resp = await fetch('/api/categories');
+    const data = await resp.json();
+    const parentSel = document.getElementById('chartParentSelect');
+    const subSel = document.getElementById('chartSubSelect');
+    parentSel.innerHTML = '<option value="">-- 全部分类 --</option>';
+    data.parents.forEach(function(p) {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        parentSel.appendChild(opt);
+    });
+    parentSel.onchange = function() {
+        const pid = this.value;
+        subSel.innerHTML = '<option value="">-- 全部小类 --</option>';
+        if (!pid) return;
+        data.subs.forEach(function(s) {
+            if (s.parent_id == pid) {
+                const opt = document.createElement('option');
+                opt.value = s.id; opt.textContent = s.name;
+                subSel.appendChild(opt);
+            }
+        });
+    };
+}
+
+function setDefaultMonths() {
+    const now = new Date();
+    const end = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    const d = new Date(now.getFullYear()-1, now.getMonth(), 1);
+    const startStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    document.getElementById('chartMonthEnd').value = end;
+    document.getElementById('chartMonthStart').value = startStr;
+}
+
+async function loadChart() {
+    const parentId = document.getElementById('chartParentSelect').value;
+    const subId = document.getElementById('chartSubSelect').value;
+    const monthStart = document.getElementById('chartMonthStart').value;
+    const monthEnd = document.getElementById('chartMonthEnd').value;
+    if (!monthStart || !monthEnd) { showToast('请选择月份范围', false); return; }
+
+    const params = new URLSearchParams();
+    if (parentId) params.set('parent_id', parentId);
+    if (subId) params.set('subcategory_id', subId);
+    if (monthStart) params.set('month_start', monthStart);
+    if (monthEnd) params.set('month_end', monthEnd);
+
+    try {
+        const resp = await fetch('/api/dashboard/category_trend?' + params.toString());
+        const data = await resp.json();
+        const months = data.months || [];
+        const series = data.series || {};
+
+        // 配色: 在库=绿色粗线, 出库目的=高区分度色+虚线
+        const purposeColors = {
+            '在库': { color: '#28a745', borderWidth: 3, borderDash: [] }
+        };
+        const palette = ['#e67e22', '#e74c3c', '#3498db', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50', '#c0392b'];
+        const dashes = [[], [6,3], [2,4], [8,4,2,4], [4,4]];
+        var di = 0, ci = 0;
+
+        var datasets = [];
+
+        // 添加在库折线（始终排第一）
+        if (series['在库'] && series['在库'].length > 0) {
+            datasets.push({
+                label: '在库',
+                data: series['在库'],
+                borderColor: '#28a745',
+                backgroundColor: 'rgba(40,167,69,0.08)',
+                pointBackgroundColor: '#28a745',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                borderWidth: 3,
+                borderDash: [],
+                fill: false,
+                tension: 0.3,
+                spanGaps: true
+            });
+        }
+
+        // 添加各出库目的折线
+        Object.keys(series).forEach(function(key) {
+            if (key === '在库') return;
+            var vals = series[key];
+            if (!vals || !Array.isArray(vals)) return;
+            var hasData = false;
+            for (var i = 0; i < vals.length; i++) { if (vals[i] > 0) { hasData = true; break; } }
+            if (!hasData) return;
+
+            var c = palette[ci % palette.length]; ci++;
+            var d = dashes[di % dashes.length]; di++;
+            datasets.push({
+                label: key,
+                data: vals,
+                borderColor: c,
+                backgroundColor: 'rgba(0,0,0,0)',
+                pointBackgroundColor: c,
+                pointBorderColor: '#fff',
+                pointBorderWidth: 1.5,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                borderWidth: 2,
+                borderDash: d,
+                fill: false,
+                tension: 0.3,
+                spanGaps: true
+            });
+        });
+
+        // 占位
+        if (datasets.length === 0) {
+            datasets.push({
+                label: '（暂无数据）',
+                data: months.map(function() { return 0; }),
+                borderColor: '#ccc',
+                borderDash: [5,5],
+                fill: false,
+                pointRadius: 0
+            });
+        }
+
+        var ctx = document.getElementById('trendChart').getContext('2d');
+        if (trendChartInstance) trendChartInstance.destroy();
+        trendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                spanGaps: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 24,
+                            boxHeight: 4,
+                            padding: 14,
+                            font: { size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + ctx.parsed.y + ' 件';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'category',
+                        grid: { display: false },
+                        ticks: {
+                            font: { size: 12 },
+                            color: '#333',
+                            autoSkip: false
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1,
+                            font: { size: 12 },
+                            color: '#333'
+                        },
+                        grid: { color: 'rgba(0,0,0,0.07)' }
+                    }
+                }
+            }
+        });
+
+        // KPI 摘要
+        var kpiRow = document.getElementById('chartKpiRow');
+        var stockVals = series['在库'] || [];
+        if (months.length > 0 && stockVals.length > 0) {
+            var totalOut = 0;
+            for (var ki = 0; ki < datasets.length; ki++) {
+                if (datasets[ki].label !== '在库') {
+                    for (var vi = 0; vi < datasets[ki].data.length; vi++) {
+                        totalOut += datasets[ki].data[vi] || 0;
+                    }
+                }
+            }
+            var change = stockVals[stockVals.length-1] - stockVals[0];
+            var changeStr = (change >= 0 ? '+' : '') + change;
+            document.getElementById('kpiStartStock').textContent = stockVals[0];
+            document.getElementById('kpiEndStock').textContent = stockVals[stockVals.length-1];
+            document.getElementById('kpiTotalOut').textContent = totalOut;
+            document.getElementById('kpiAvgOut').textContent = Math.round(totalOut / months.length);
+            var el = document.getElementById('kpiStockChange');
+            el.textContent = changeStr;
+            el.style.color = change >= 0 ? '#28a745' : '#dc3545';
+            kpiRow.style.display = '';
+        } else {
+            kpiRow.style.display = 'none';
+        }
+    } catch(e) {
+        console.error('Chart error:', e);
+        showToast('图表加载失败', false);
+    }
+}
+
+document.getElementById('chartPanel').addEventListener('shown.bs.collapse', function() {
+    loadChartCategories();
+    setDefaultMonths();
+    setTimeout(function() { loadChart(); }, 300);
+});
+
+document.getElementById('chartRefreshBtn').addEventListener('click', function() {
+    loadChart();
+});</script>
+</body>
+</html>

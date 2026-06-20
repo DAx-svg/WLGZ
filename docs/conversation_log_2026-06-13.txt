@@ -1,0 +1,156 @@
+================================================================================
+  物料全流程追溯系统 v2.4 — 会话记录（第三部分：云端故障排查 + Bug修复）
+  日期：2026-06-12 ~ 2026-06-13
+  项目路径：C:\Users\1\material-tracking
+  部署地址：https://daxsvg.pythonanywhere.com
+  GitHub：https://github.com/DAx-svg/WLGZ
+================================================================================
+
+目录
+----
+  一、云端 504 故障排查
+  二、远程代码审查与 Bug 修复
+  三、数据库锁问题处理
+  四、数据恢复与本地同步
+  五、Git 提交记录
+  六、当前状态
+
+================================================================================
+  一、云端 504 故障排查
+================================================================================
+
+现象：
+  用户访问 https://daxsvg.pythonanywhere.com 报 504 Load Balancer 错误
+
+排查过程：
+  1. HARAKIRI 日志分析 — uWSGI worker 在处理 POST /api/material/add 时卡死
+     被反复 kill/respawn，最终崩溃
+  2. 发现远程有 11 个新提交（用户另一台电脑推送的功能）
+  3. Source code 路径被错误设置为 /home/DAxsvg/mysite，
+     实际应用在 /home/DAxsvg/WLGZ — 已修复
+  4. material.db-journal 残留（DELETE 模式崩溃遗留）— 已删除
+  5. uWSGI socket 损坏导致 reload 持续失败
+  6. PythonAnywhere 控制台服务不稳定，多次崩溃
+
+================================================================================
+  二、远程代码审查与 Bug 修复
+================================================================================
+
+本地 HEAD：1204e16 → 拉取远程 11 个提交后 → 81ee8e4
+
+Bug 1（致命）：api_category_trend SQL 拼接错误
+  文件：app.py line 2067/2070
+  问题：cat_clause = 'AND m.category_id = ?'  缺少前导空格
+        拼接为 WHERE 1=1AND ... → 非法 SQL token "1AND"
+  修复：改为 ' AND m.category_id = ?'（加空格）
+
+Bug 2（高）：BOM 字符
+  文件：app.py line 1
+  问题：远程文件以 EF BB BF (UTF-8 BOM) 开头
+        Python 3.10 可能因 BOM 导致 WSGI 导入异常
+  修复：移除 BOM 字节
+
+Bug 3（高）：数据库写锁阻塞
+  文件：app.py get_db() line 43
+  问题：PRAGMA journal_mode=DELETE + Python 3.10 默认 isolation_level='DEFERRED'
+        导致写操作互相阻塞，worker 卡死
+  修复：
+    - 切换到 PRAGMA journal_mode=WAL（单 worker 环境安全）
+    - init_db() 启动时自动清理残留 -journal/-wal/-shm 文件
+
+Bug 4（低）：init_db 启动无自动恢复
+  文件：app.py init_db()
+  修复：在 init_db 开头添加 glob 扫描，自动删除 DATABASE 旁的所有锁文件
+
+寄修逻辑审查：
+  云端在 api_outbound 新增了"故障出库寄修"入口，与本地 api_fault 的寄修入口并存
+  两处都有状态守卫（寄修中禁止出库/入库），不存在运行时冲突
+  功能冗余但安全
+
+================================================================================
+  三、数据库锁问题处理
+================================================================================
+
+问题链：
+  1. DELETE journal_mode 在 NFS 上文件锁不稳定
+  2. HARAKIRI 杀死 worker 时未清理 journal 文件
+  3. 新连接尝试 hot journal rollback 失败 → database is locked
+  4. 所有写入操作阻塞，busy_timeout=5000 后超时
+  5. 用户删除 material.db 后文件更碎片化
+
+尝试的修复：
+  - rm material.db-journal → 控制台卡死
+  - sqlite3 .dump → 控制台卡死
+  - cp material.db.bak2 material.db → 控制台崩
+  - Files 页面重命名 → 界面不支持
+
+最终方案：
+  在 init_db() 添加启动时自动清理 + 强制 WAL 模式
+  推送到 GitHub，Web Reload 时自动执行
+
+================================================================================
+  四、数据恢复与本地同步
+================================================================================
+
+由于 PythonAnywhere 控制台服务崩溃，改为本地恢复：
+  1. 从 PythonAnywhere Files 页面下载 material.db.bak2 (98304 bytes)
+  2. 复制到本地 C:\Users\1\material-tracking\material.db
+  3. 验证：31 条物料，integrity check ok，WAL 模式
+  4. 本地原数据库备份为 material.db.local_bak
+
+代码同步：
+  本地通过 git pull 拉取了全部 11 个远程提交
+  加上后续 3 个 Bug 修复提交，本地共 14 个提交
+  batch_outbound.html (686行)、图表、品类趋势等全部功能已在本地
+
+================================================================================
+  五、Git 提交记录
+================================================================================
+
+本地新增提交（本次会话）：
+
+  a3cba82 fix: 修复api_category_trend SQL拼接空格 + 去除BOM字符
+          1 file changed, 3 insertions(+), 3 deletions(-)
+
+  84011d9 fix: 切换WAL模式避免数据库写锁阻塞
+          1 file changed, 1 insertion(+), 1 deletion(-)
+
+  7204ba2 fix: init_db启动时清理残留锁文件并强制WAL模式
+          1 file changed, 9 insertions(+)
+
+云端功能提交（已拉取到本地）：
+  81ee8e4 fix: 简化Chart.js配置，修复X轴标签和图例
+  2d27755 fix: X轴显示月份标签 + Y轴显示数量标题
+  1adb279 fix: 改为多折线图，高区分度颜色+虚线
+  7e0e4d7 feat: 图表改为堆叠柱状+折线组合图 + KPI摘要行
+  2a4f1e7 fix: 出库目的匹配 + JS 图表加载失败
+  b502b24 feat: 方案A — 品类筛选+多状态趋势图替换原图表面板
+  e859407 fix: 卡片等高 + 图表修复
+  ed4257e fix: 完成首页卡片/详情页寄回弹窗/出库页文本的批量修复
+  ba972cc fix: 图表代码外露/批量出库JS损坏/品类筛选/localStorage
+  28afd10 fix: 图表collapse事件/批量出库故障出库+持久化
+  174b72d fix: 5项修复 — 重新入库用途清除/故障出库流程/首页图表/品类筛选/首次加载
+
+================================================================================
+  六、当前状态
+================================================================================
+
+本地：
+  ✅ 代码：全部功能（寄修流程 + 分类筛选 + 图表 + 品类趋势）+ Bug 修复
+  ✅ 数据：31 条物料（来自云端备份），数据库完整
+  ✅ 服务：http://127.0.0.1:8080 正常运行
+
+云端（PythonAnywhere）：
+  ❌ 服务宕机（504 Load Balancer）
+  ❌ 数据库被删，material.db.bak2 (98304 bytes) 在 Files 页面备用
+  ❌ uWSGI socket 损坏，控制台服务不稳定
+  ⏳ 待 PythonAnywhere 服务恢复后：
+     1. 控制台执行：mv material.db.bak2 material.db
+     2. 或通过 Files 页面重命名
+     3. Web → Reload
+     4. 或用本地稳定版 git push --force 覆盖后 git pull + Reload
+
+================================================================================
+  生成时间：2026-06-13
+  模型：DeepSeek V4 Pro
+================================================================================

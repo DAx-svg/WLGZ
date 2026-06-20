@@ -3,7 +3,7 @@
 :: 24小时实时，每30分钟自动从云端拉一次最新数据到本地
 :: 双击此文件即可安装
 
-schtasks /Create /SC MINUTE /MO 30 /TN "WlgzSyncDB" /TR "python C:\Users\1\material-tracking\sync_db.py" /F
+schtasks /Create /SC MINUTE /MO 30 /TN "WlgzSyncDB" /TR "python D:\板卡物料追溯系统\sync_db.py" /F
 
 if %errorlevel%==0 (
     echo.
