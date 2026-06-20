@@ -22,6 +22,7 @@ import sqlite3
 app = Flask(__name__)
 DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
 DATABASE = os.path.join(DATA_DIR, 'material.db')
+JOURNAL_MODE = os.environ.get('JOURNAL_MODE', 'WAL')  # PythonAnywhere NFS 不支持 WAL，需设为 DELETE
 
 
 def validate_sn(sn):
@@ -40,7 +41,7 @@ def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DATABASE)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")  # WAL 避免写锁阻塞，单 worker 安全
+        g.db.execute(f"PRAGMA journal_mode={JOURNAL_MODE}")
         g.db.execute("PRAGMA busy_timeout=5000")
         g.db.execute("PRAGMA foreign_keys=ON")
     return g.db
@@ -70,8 +71,8 @@ def init_db():
         except Exception:
             pass
     db = get_db()
-    # 确保 WAL 模式生效
-    db.execute("PRAGMA journal_mode=WAL")
+    # 设置 journal 模式（本地 WAL，云端 DELETE）
+    db.execute(f"PRAGMA journal_mode={JOURNAL_MODE}")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS categories (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,8 +91,14 @@ def init_db():
             inbound_time    TEXT NOT NULL,
             remarks         TEXT DEFAULT '',
             category_id     INTEGER DEFAULT NULL,
+            updated_at      TEXT DEFAULT '',
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
         );
+
+        -- 兼容旧表：添加 updated_at 列（如果不存在）
+        -- 使用 try/except 包裹，Python 端执行
+        CREATE TABLE IF NOT EXISTS _migration_done (flag INTEGER);
+        INSERT OR IGNORE INTO _migration_done (flag) VALUES (1);
 
         CREATE TABLE IF NOT EXISTS outbound_records (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,6 +221,30 @@ def init_db():
             db.execute(f"ALTER TABLE fault_records ADD COLUMN {col} TEXT DEFAULT {default}")
         except sqlite3.OperationalError:
             pass
+    # v2.6: 时间戳冲突仲裁 — updated_at 字段 + 触发器
+    try:
+        db.execute("ALTER TABLE materials ADD COLUMN updated_at TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    # 触发器：任何 UPDATE 自动刷新 updated_at
+    db.executescript("""
+        DROP TRIGGER IF EXISTS tr_materials_upd;
+        CREATE TRIGGER tr_materials_upd AFTER UPDATE ON materials
+        FOR EACH ROW
+        BEGIN
+            UPDATE materials SET updated_at = datetime('now', 'localtime')
+            WHERE sn = OLD.sn AND updated_at = OLD.updated_at;
+        END;
+
+        DROP TRIGGER IF EXISTS tr_materials_ins;
+        CREATE TRIGGER tr_materials_ins AFTER INSERT ON materials
+        FOR EACH ROW
+        WHEN NEW.updated_at = ''
+        BEGIN
+            UPDATE materials SET updated_at = datetime('now', 'localtime')
+            WHERE sn = NEW.sn;
+        END;
+    """)
     db.commit()
 
 

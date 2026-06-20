@@ -217,20 +217,42 @@ try:
         print(f'  --force 模式：云端({remote_count}条)覆盖本地({local_count}条)')
         print(f'  本地独有的 {len(only_local)} 条将被丢弃')
 
-    # 8. 状态变更检测：本地和云端都有但状态不同的SN
+    # 8. 冲突仲裁：本地和云端都有，但内容不同 → 以 updated_at 时间为准
     if not FORCE:
         common_sns = local_sns & remote_sns
-        status_conflicts = []
+        local_wins = []
         for sn in common_sns:
-            ls = local_db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()['status']
-            rs = remote_db.execute("SELECT status FROM materials WHERE sn=?", (sn,)).fetchone()['status']
+            lr = local_db.execute("SELECT status, updated_at FROM materials WHERE sn=?", (sn,)).fetchone()
+            rr = remote_db.execute("SELECT status, updated_at FROM materials WHERE sn=?", (sn,)).fetchone()
+            ls, lt = lr['status'], lr['updated_at'] or ''
+            rs, rt = rr['status'], rr['updated_at'] or ''
             if ls != rs:
-                status_conflicts.append((sn, ls, rs))
+                if lt and rt and lt > rt:
+                    local_wins.append((sn, ls, rs, lt, rt))
+                elif lt and rt and rt > lt:
+                    pass  # 云端更新，保留云端
+                elif lt and not rt:
+                    local_wins.append((sn, ls, rs, lt, '(空)'))
+                elif rt and not lt:
+                    pass  # 云端有时间戳本地没有，云端为准
+                else:
+                    pass  # 都没时间戳，云端为准
 
-        if status_conflicts:
-            print(f'  发现 {len(status_conflicts)} 条状态不一致，以云端为准')
-            for sn, local_st, remote_st in status_conflicts[:5]:
-                print(f'    {sn}: 本地"{local_st}" → 云端"{remote_st}"')
+        if local_wins:
+            print(f'  发现 {len(local_wins)} 条冲突，本地更新时间更新 → 推送到云端')
+            for sn, local_st, remote_st, lt, rt in local_wins[:10]:
+                try:
+                    result = merge_status_to_cloud(sn, local_st)
+                    if result.get('success'):
+                        print(f'    ✓ {sn}: 本地"{local_st}" ({lt}) > 云端"{remote_st}" ({rt})')
+                    else:
+                        print(f'    ✗ {sn}: {result.get("message", "未知错误")}')
+                except Exception as e:
+                    print(f'    ✗ {sn}: {e}')
+            # 推送后重新拉取，保证本地 = 云端
+            print(f'  重新拉取云端...')
+            with urllib.request.urlopen(REMOTE_DB, timeout=30) as resp:
+                remote_data = resp.read()
 
     local_db.close()
     remote_db.close()
