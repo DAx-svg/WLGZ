@@ -20,6 +20,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, g
 import sqlite3
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # 开发阶段：模板修改即时生效
 DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
 DATABASE = os.path.join(DATA_DIR, 'material.db')
 JOURNAL_MODE = os.environ.get('JOURNAL_MODE', 'WAL')  # PythonAnywhere NFS 不支持 WAL，需设为 DELETE

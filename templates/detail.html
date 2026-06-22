@@ -339,7 +339,7 @@
             <label class="form-check-label" for="outNeedReturn">需要客户寄回故障件</label>
         </div>
         <div id="outReturnFields" style="display:none;">
-            <div class="mb-2"><label class="form-label">客户需寄回的故障件 SN</label><input class="form-control" id="outReturnSn" placeholder="可后续补充" style="font-family:monospace;"></div>
+            <div class="mb-2"><label class="form-label">客户需寄回的故障件 SN <span class="form-check form-check-inline ms-2"><input class="form-check-input" type="checkbox" id="outReturnNoSn" onchange="toggleNoSn('outReturnSn',this)"><label class="form-check-label small text-muted" for="outReturnNoSn">无SN码（旧件）</label></span></label><input class="form-control" id="outReturnSn" placeholder="可后续补充" style="font-family:monospace;"></div>
             <div class="row g-2">
                 <div class="col-6"><label class="form-label">客户寄回快递公司</label><input class="form-control" id="outReturnCourier" placeholder="可后续补充"></div>
                 <div class="col-6"><label class="form-label">客户寄回快递单号</label><input class="form-control" id="outReturnTracking" placeholder="可后续补充"></div>
@@ -478,7 +478,7 @@
             </select>
         </div>
         <div id="obEditReturnFields">
-        <div class="mb-2"><label class="form-label">客户寄回故障件 SN</label><input class="form-control" id="obEditReturnSn" style="font-family:monospace;"></div>
+        <div class="mb-2"><label class="form-label">客户寄回故障件 SN <span class="form-check form-check-inline ms-2"><input class="form-check-input" type="checkbox" id="obEditReturnNoSn" onchange="toggleNoSn('obEditReturnSn',this)"><label class="form-check-label small text-muted" for="obEditReturnNoSn">无SN码（旧件）</label></span></label><input class="form-control" id="obEditReturnSn" style="font-family:monospace;"></div>
         <div class="row g-2 mb-2">
             <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="obEditReturnCourier"></div>
             <div class="col-6"><label class="form-label">寄回快递单号</label><input class="form-control" id="obEditReturnTracking"></div>
@@ -514,7 +514,7 @@
 <div class="modal fade" id="returnStatusModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content">
 <div class="modal-header bg-warning text-dark"><h6 class="modal-title">标记寄回 - 填写寄回信息</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
 <form id="returnStatusForm"><div class="modal-body">
-    <div class="mb-2"><label class="form-label">寄回故障件 SN</label><input class="form-control" id="returnSnInput" style="font-family:monospace;"></div>
+    <div class="mb-2"><label class="form-label">寄回故障件 SN <span class="form-check form-check-inline ms-2"><input class="form-check-input" type="checkbox" id="returnSnNoSn" onchange="toggleNoSn('returnSnInput',this)"><label class="form-check-label small text-muted" for="returnSnNoSn">无SN码（旧件）</label></span></label><input class="form-control" id="returnSnInput" style="font-family:monospace;"></div>
     <div class="row g-2 mb-2">
         <div class="col-6"><label class="form-label">快递公司</label><input class="form-control" id="returnCourierInput"></div>
         <div class="col-6"><label class="form-label">快递单号</label><input class="form-control" id="returnTrackingInput"></div>
@@ -857,9 +857,17 @@ function deleteOutbound(id){
         .then(function(d){st(d.message,d.success);if(d.success)reload();})
         .catch(function(){st('网络错误',false);});
 }
+// 无SN码旧件勾选框
+function toggleNoSn(inputId, cb){
+    var el = document.getElementById(inputId);
+    if(!el) return;
+    if(cb.checked){ el.value = '(无SN旧件)'; el.readOnly = true; el.classList.add('bg-light','text-muted'); }
+    else { el.value = ''; el.readOnly = false; el.classList.remove('bg-light','text-muted'); }
+}
 // 标记寄回完成
 function markReturned(id){
-    document.getElementById('returnSnInput').value='';document.getElementById('returnCourierInput').value='';document.getElementById('returnTrackingInput').value='';
+    document.getElementById('returnSnInput').value='';document.getElementById('returnSnInput').readOnly=false;document.getElementById('returnSnInput').classList.remove('bg-light','text-muted');document.getElementById('returnSnNoSn').checked=false;
+    document.getElementById('returnCourierInput').value='';document.getElementById('returnTrackingInput').value='';
     document.getElementById('returnStatusForm').onsubmit=function(e){e.preventDefault();
         fetch('/api/outbound/'+id+'/return',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({return_sn:document.getElementById('returnSnInput').value.trim(),return_courier:document.getElementById('returnCourierInput').value.trim(),return_tracking:document.getElementById('returnTrackingInput').value.trim()})})
         .then(function(r){return r.json();})
@@ -882,6 +890,11 @@ function editOutbound(id,purpose,purpose_detail,courier_company,tracking_number,
     document.getElementById('obEditReturnSn').value=return_sn||'';
     document.getElementById('obEditReturnCourier').value=return_courier||'';
     document.getElementById('obEditReturnTracking').value=return_tracking||'';
+    // 恢复无SN勾选框状态
+    var noSnCb = document.getElementById('obEditReturnNoSn');
+    var snEl = document.getElementById('obEditReturnSn');
+    if(return_sn === '(无SN旧件)'){ noSnCb.checked = true; snEl.readOnly = true; snEl.classList.add('bg-light','text-muted'); }
+    else { noSnCb.checked = false; snEl.readOnly = false; snEl.classList.remove('bg-light','text-muted'); }
     new bootstrap.Modal(document.getElementById('editOutboundModal')).show();
 }
 document.getElementById('editOutboundForm').addEventListener('submit',function(e){e.preventDefault();

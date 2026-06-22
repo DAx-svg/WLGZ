@@ -1,0 +1,187 @@
+================================================================================
+  物料全流程追溯系统 v2.6 — 会话记录（项目迁移 + 部署 + 时间戳仲裁）
+  日期：2026-06-20
+  项目路径：D:\板卡物料追溯系统
+  部署地址：http://127.0.0.1:8080
+  云端地址：https://daxsvg.pythonanywhere.com
+================================================================================
+
+目录
+----
+  一、项目迁移：C盘 → D盘
+  二、开机自启修复
+  三、代码推送 GitHub
+  四、PythonAnywhere 部署
+  五、数据同步修复
+  六、updated_at 时间戳仲裁
+  七、最终架构总结
+
+================================================================================
+  一、项目迁移：C盘 → D盘
+================================================================================
+
+源目录：C:\Users\1\material-tracking
+目标目录：D:\板卡物料追溯系统
+
+操作步骤：
+  1. xcopy /E /I /H /Y 复制全部文件
+  2. 修改 setup_sync.bat（第6行）：C:\Users\1 → D:\板卡物料追溯系统
+  3. 修改 setup_sync.ps1（第1行）：同上
+  4. 重新注册定时任务：schtasks /Create ... /TR "python D:\板卡物料追溯系统\sync_db.py" /F
+  5. 从新目录启动服务，验证正常
+
+影响分析：
+  - Python 源码全部使用 __file__ 相对路径，搬家无障碍 ✅
+  - SQLite 数据库随项目移动，数据不丢失 ✅
+  - 仅 setup_sync.bat / setup_sync.ps1 含硬编码路径，已更新 ✅
+  - docs/ 下旧日志路径不变（纯记录文档，不影响运行）
+
+数据库：material.db（38条物料），SQLite 单文件，位于项目根目录
+打开方式：DB Browser for SQLite / VS Code SQLite Viewer / 命令行 sqlite3
+
+================================================================================
+  二、开机自启修复
+================================================================================
+
+问题：每次重启电脑后 http://127.0.0.1:8080 打不开
+根因：Flask 服务未设置开机自启，进程随关机终止
+
+解决：
+  - 创建计划任务 WlgzApp：开机延迟30秒启动 app.py
+  - 首次配置失败原因：schtasks 用 SYSTEM 账户运行，PATH 中无 python
+  - 修复：使用完整 Python 路径 C:\Users\1\AppData\Local\Python\bin\python.exe
+
+命令：
+  schtasks /Create /SC ONSTART /TN "WlgzApp" /TR "C:\Users\1\AppData\Local\Python\bin\python.exe D:\板卡物料追溯系统\app.py" /DELAY 0000:30 /F
+
+================================================================================
+  三、代码推送 GitHub
+================================================================================
+
+仓库：https://github.com/DAx-svg/WLGZ
+
+推送前安全加固（.gitignore）：
+  __pycache__/
+  *.pyc
+  *.db
+  *.db.*          ← 新增：保护 material.db.bak / .DISASTER_SAFE / .local_bak
+  sync_state.json ← 新增：保护同步状态文件
+  *.xlsx          ← 新增：保护 Excel 导出文件
+  .DS_Store
+
+推送内容（commit ca6d963）：
+  - app.py：v2.5 全部后端改动
+  - templates/：index.html / detail.html / batch_outbound.html
+  - setup_sync.bat / setup_sync.ps1：路径更新为 D 盘
+  - .gitignore：安全加固
+  - generate_excel.py：新增
+  - docs/：6 篇对话日志
+
+未推送（安全保护）：
+  - material.db 及所有备份文件 🔒
+  - sync_state.json 🔒
+  - Excel 导出文件 🔒
+
+================================================================================
+  四、PythonAnywhere 部署
+================================================================================
+
+问题：PythonAnywhere NFS 不支持 SQLite WAL 模式（曾导致崩溃）
+
+修复（app.py）：
+  - 新增 JOURNAL_MODE 环境变量，默认 WAL，云端设为 DELETE
+  - DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
+  - JOURNAL_MODE = os.environ.get('JOURNAL_MODE', 'WAL')
+  - get_db() 和 init_db() 中 PRAGMA journal_mode 改为读取 JOURNAL_MODE
+
+PythonAnywhere 配置：
+  - WSGI 文件中添加：os.environ['JOURNAL_MODE'] = 'DELETE'
+  - WSGI 文件中已有：os.environ['WLGZ_SYNC_TOKEN'] = 'h391lNv1a_lKItRm_nt-WNXkD-bKwV84scrVLaEgG7U'
+
+部署步骤：
+  1. 本地 git push
+  2. PythonAnywhere Bash Console → cd /home/DAxsvg/WLGZ && git pull origin master
+  3. PythonAnywhere Web 标签 → Reload
+
+================================================================================
+  五、数据同步修复
+================================================================================
+
+问题：本地 SLGZ_SYNC_TOKEN 环境变量未设置，定时同步全部失败（403）
+
+修复：
+  setx WLGZ_SYNC_TOKEN "h391lNv1a_lKItRm_nt-WNXkD-bKwV84scrVLaEgG7U" /M
+
+同步机制（sync_db.py）：
+  - 触发：WlgzSyncDB 计划任务，每30分钟
+  - 默认模式（不带 --force）：双向智能同步
+    · 本地独有 → 推送到云端
+    · 云端独有 → 拉到本地
+    · 两边冲突 → updated_at 时间戳仲裁（v2.6）
+  - --force 模式：云端覆盖本地（包括删除）
+
+================================================================================
+  六、updated_at 时间戳仲裁（v2.6 核心更新）
+================================================================================
+
+问题背景：
+  用户平时在云端加 SN，云端崩了时在本地应急操作
+  旧逻辑：冲突时"云端盲赢"→ 云端恢复后旧数据覆盖本地新操作
+  用户需求：谁最后改谁赢
+
+实现方案：
+
+  数据库层（app.py init_db）：
+    1. materials 表新增 updated_at TEXT DEFAULT '' 列
+    2. 兼容迁移：ALTER TABLE ADD COLUMN + try/except
+    3. 触发器 tr_materials_ins：INSERT 时自动设置 updated_at
+    4. 触发器 tr_materials_upd：UPDATE 时自动刷新 updated_at
+
+  同步层（sync_db.py 第8节重写）：
+    原逻辑：状态冲突 → 以云端为准
+    新逻辑：比较 local.updated_at vs cloud.updated_at
+      - 本地 > 云端 → 推本地到云端
+      - 云端 > 本地 → 保留云端
+      - 本地有时间戳、云端空 → 本地赢
+      - 云端有时间戳、本地空 → 云端赢
+      - 都没有时间戳 → 云端赢（兼容旧数据）
+
+  优势：
+    - 无需修改任何 INSERT/UPDATE 语句（触发器自动处理）
+    - 未来新增代码自动享有时间戳保护
+    - 向后兼容（旧数据无时间戳时云端为准）
+
+================================================================================
+  七、最终架构总结
+================================================================================
+
+三端部署：
+  ┌─────────────────────────────────────────────────────┐
+  │ D:\板卡物料追溯系统（本地）                          │
+  │ http://127.0.0.1:8080         开机自启 WlgzApp      │
+  │ material.db                   触发器自动时间戳       │
+  │ git push → GitHub             手动                   │
+  ├─────────────────────────────────────────────────────┤
+  │ GitHub DAx-svg/WLGZ            不含数据库             │
+  ├─────────────────────────────────────────────────────┤
+  │ PythonAnywhere（云端）                               │
+  │ https://daxsvg.pythonanywhere.com                    │
+  │ JOURNAL_MODE=DELETE            触发器自动时间戳       │
+  │ git pull + Reload              手动                   │
+  └─────────────────────────────────────────────────────┘
+
+同步（每30分钟自动）：
+  下载云端 → 对比 → 本地独有推上去 / 云端独有拉下来 / 冲突比时间戳
+
+日常工作流：
+  - 平时：云端操作 → 30分钟内自动拉到本地
+  - 应急：本地操作 → 云端恢复后时间戳仲裁，本地新数据推上去
+  - 发布：本地 git push → 云端 git pull → Reload
+
+安全保护：
+  - .gitignore：*.db / *.db.* / sync_state.json / *.xlsx
+  - 同步 token：环境变量，不在代码中
+
+================================================================================
+  生成时间：2026-06-20
+================================================================================

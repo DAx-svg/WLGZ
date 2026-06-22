@@ -123,7 +123,7 @@
                                     <label class="form-check-label" for="needReturn">需要客户寄回故障件</label>
                                 </div>
                                 <div id="returnFields" style="display:none;">
-                                    <div class="mb-2"><label class="form-label">客户需寄回的故障件 SN</label><input class="form-control" id="returnSn" placeholder="可后续补充" style="font-family:monospace;"></div>
+                                    <div class="mb-2"><label class="form-label">客户需寄回的故障件 SN <span class="form-check form-check-inline ms-2"><input class="form-check-input" type="checkbox" id="returnNoSn" onchange="toggleNoSn('returnSn',this)"><label class="form-check-label small text-muted" for="returnNoSn">无SN码（旧件）</label></span></label><input class="form-control" id="returnSn" placeholder="可后续补充" style="font-family:monospace;"></div>
                                     <div class="row g-2">
                                         <div class="col-6"><label class="form-label">寄回快递公司</label><input class="form-control" id="returnCourier" placeholder="可后续补充"></div>
                                         <div class="col-6"><label class="form-label">寄回快递单号</label><input class="form-control" id="returnTracking" placeholder="可后续补充"></div>
@@ -216,6 +216,7 @@ let faultDetails = {};   // {sn: fault_reason} — 每个SN独立的故障原因
 
 // ====== Toast ======
 function st(m,ok){var e=document.getElementById('resultToast');document.getElementById('toastBody').textContent=m;e.classList.add(ok?'bg-success':'bg-danger','text-white');new bootstrap.Toast(e).show();}
+function toggleNoSn(inputId,cb){var el=document.getElementById(inputId);if(!el)return;if(cb.checked){el.value='(无SN旧件)';el.readOnly=true;el.classList.add('bg-light','text-muted');}else{el.value='';el.readOnly=false;el.classList.remove('bg-light','text-muted');}}
 
 // ====== 智能解析客户信息 ======
 function smartParse(text){

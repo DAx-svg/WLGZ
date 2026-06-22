@@ -109,13 +109,55 @@
                 <div class="card-body">
                     <form id="batchForm">
                         <div class="row g-3">
+                            <!-- 序列号生成器 -->
+                            <div class="col-12">
+                                <div class="border rounded p-3 bg-light">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-bold small"><i class="bi bi-calculator"></i> 序列号生成器</span>
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#seqGenBody">展开/收起</button>
+                                    </div>
+                                    <div class="collapse" id="seqGenBody">
+                                        <div class="row g-2">
+                                            <div class="col-md-3">
+                                                <label class="form-label small mb-0">前缀</label>
+                                                <input type="text" class="form-control form-control-sm" id="seqPrefix" placeholder="如 SN-">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-0">起始编号</label>
+                                                <input type="number" class="form-control form-control-sm" id="seqStart" value="1" min="1">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-0">结束编号</label>
+                                                <input type="number" class="form-control form-control-sm" id="seqEnd" value="1" min="1">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-0">补零位数 <span class="text-muted">(0=自动)</span></label>
+                                                <input type="number" class="form-control form-control-sm" id="seqPad" value="0" min="0" max="10">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small mb-0">后缀</label>
+                                                <input type="text" class="form-control form-control-sm" id="seqSuffix" placeholder="如 -A">
+                                            </div>
+                                            <div class="col-12 mt-1">
+                                                <button class="btn btn-primary btn-sm" type="button" onclick="generateSequence()">
+                                                    <i class="bi bi-lightning"></i> 生成序列并填入下方
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SN 输入区 -->
                             <div class="col-12">
                                 <label class="form-label">SN 列表 <span class="text-danger">*</span></label>
                                 <textarea class="form-control" id="batchSns" rows="6"
                                     placeholder="换行、逗号、分号、冒号、顿号分隔&#10;SN-2024-006&#10;SN-2024-007"
                                     style="font-family:monospace;"></textarea>
-                                <div class="mt-1">
+                                <div class="mt-1 d-flex gap-2 flex-wrap">
                                     <button class="btn btn-outline-info btn-sm" type="button" id="batchFillBtn" title="用第一个SN查找相似物料并填充"><i class="bi bi-search"></i> 查找相似SN填充</button>
+                                    <button class="btn btn-outline-warning btn-sm" type="button" id="undoBtn" onclick="undoSnList()" title="撤销上次生成/修改"><i class="bi bi-arrow-counterclockwise"></i> 撤销</button>
+                                    <button class="btn btn-outline-success btn-sm" type="button" id="redoBtn" onclick="redoSnList()" title="恢复被撤销的内容"><i class="bi bi-arrow-clockwise"></i> 恢复</button>
                                     <span id="batchSimilarHint" style="display:none;"></span>
                                 </div>
                             </div>
@@ -340,9 +382,10 @@ document.getElementById('singleFillBtn').addEventListener('click', function(){
 document.getElementById('batchFillBtn').addEventListener('click', function(){
     var text = document.getElementById('batchSns').value.trim();
     if(!text){ st('请先输入SN', false); return; }
-    var sns = text.split(/[\,;；：:、\s]+/).filter(function(s){return s.trim();});
-    if(sns.length === 0){ st('未解析到有效SN', false); return; }
-    autoFillFromSimilar(sns[0].trim(), true);
+    // 取第一行作为 SN 去匹配（避免冒号等分隔符误切前缀）
+    var lines = text.split(/[\n\r]+/).filter(function(s){return s.trim();});
+    if(lines.length === 0){ st('未解析到有效SN', false); return; }
+    autoFillFromSimilar(lines[0].trim(), true);
 });
 
 async function doSubmit(formId, btnId, isBatch){
@@ -388,6 +431,88 @@ async function doSubmit(formId, btnId, isBatch){
 
 document.getElementById('singleForm').addEventListener('submit',function(e){e.preventDefault();doSubmit('singleForm','singleBtn',false);});
 document.getElementById('batchForm').addEventListener('submit',function(e){e.preventDefault();doSubmit('batchForm','batchBtn',true);});
+
+// ====== 序列号生成器 ======
+var snBefore = '';       // 生成前的文本
+var snAfter = '';        // 生成后的文本
+var snUndone = false;    // 当前是否处于撤销状态
+
+function updateUndoRedoBtns(){
+    var ub = document.getElementById('undoBtn');
+    var rb = document.getElementById('redoBtn');
+    if(snAfter === '' || snAfter === snBefore){
+        ub.classList.add('opacity-50');
+        rb.classList.add('opacity-50');
+    } else if(snUndone){
+        ub.classList.add('opacity-50');
+        rb.classList.remove('opacity-50');
+    } else {
+        ub.classList.remove('opacity-50');
+        rb.classList.add('opacity-50');
+    }
+}
+
+function undoSnList(){
+    if(snAfter === '' || snAfter === snBefore){ st('没有可撤销的操作，请先生成序列号', false); return; }
+    if(snUndone){ st('已经撤销过了，点恢复按钮即可', false); return; }
+    var ta = document.getElementById('batchSns');
+    ta.value = snBefore;
+    snUndone = true;
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    ta.dispatchEvent(new Event('change', {bubbles:true}));
+    updateUndoRedoBtns();
+    st('已撤销，文本已恢复到生成前', true);
+}
+
+function redoSnList(){
+    if(snAfter === '' || snAfter === snBefore){ st('没有可恢复的操作', false); return; }
+    if(!snUndone){ st('尚未撤销，无需恢复', false); return; }
+    var ta = document.getElementById('batchSns');
+    ta.value = snAfter;
+    snUndone = false;
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    ta.dispatchEvent(new Event('change', {bubbles:true}));
+    updateUndoRedoBtns();
+    st('已恢复生成的序列号', true);
+}
+
+function generateSequence(){
+    var prefix = document.getElementById('seqPrefix').value.trim();
+    var suffix = document.getElementById('seqSuffix').value.trim();
+    var start = parseInt(document.getElementById('seqStart').value) || 1;
+    var end = parseInt(document.getElementById('seqEnd').value) || 1;
+    var pad = parseInt(document.getElementById('seqPad').value) || 0;
+
+    if(start > end){ st('起始编号不能大于结束编号', false); return; }
+    if(end - start > 9999){ st('一次最多生成 10000 个序列号', false); return; }
+
+    var digits = pad;
+    if(digits === 0){ digits = String(end).length; }
+
+    var sns = [];
+    for(var i = start; i <= end; i++){
+        var num = String(i).padStart(digits, '0');
+        sns.push(prefix + num + suffix);
+    }
+
+    var ta = document.getElementById('batchSns');
+    // 保存生成前状态
+    snBefore = ta.value;
+    // 追加生成内容
+    var existing = ta.value.trim();
+    if(existing){
+        ta.value = existing + '\n' + sns.join('\n');
+    } else {
+        ta.value = sns.join('\n');
+    }
+    // 保存生成后状态
+    snAfter = ta.value;
+    snUndone = false;
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    ta.dispatchEvent(new Event('change', {bubbles:true}));
+    updateUndoRedoBtns();
+    st('已生成 ' + sns.length + ' 个序列号', true);
+}
 
 // ====== 表单记忆：自动保存/恢复已填信息 ======
 var FORM_KEY = 'addFormData';
