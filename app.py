@@ -222,12 +222,13 @@ def init_db():
             db.execute(f"ALTER TABLE fault_records ADD COLUMN {col} TEXT DEFAULT {default}")
         except sqlite3.OperationalError:
             pass
-    # v2.6: 时间戳冲突仲裁 — updated_at 字段 + 触发器
-    try:
-        db.execute("ALTER TABLE materials ADD COLUMN updated_at TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass
-    # 触发器：任何 UPDATE 自动刷新 updated_at
+    # v2.6: 时间戳冲突仲裁 — updated_at 字段 + 触发器（materials + outbound_records）
+    for table in ('materials', 'outbound_records'):
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN updated_at TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+    # materials 触发器：任何 UPDATE/INSERT 自动刷新 updated_at
     db.executescript("""
         DROP TRIGGER IF EXISTS tr_materials_upd;
         CREATE TRIGGER tr_materials_upd AFTER UPDATE ON materials
@@ -244,6 +245,23 @@ def init_db():
         BEGIN
             UPDATE materials SET updated_at = datetime('now', 'localtime')
             WHERE sn = NEW.sn;
+        END;
+
+        DROP TRIGGER IF EXISTS tr_outbound_upd;
+        CREATE TRIGGER tr_outbound_upd AFTER UPDATE ON outbound_records
+        FOR EACH ROW
+        BEGIN
+            UPDATE outbound_records SET updated_at = datetime('now', 'localtime')
+            WHERE id = OLD.id AND updated_at = OLD.updated_at;
+        END;
+
+        DROP TRIGGER IF EXISTS tr_outbound_ins;
+        CREATE TRIGGER tr_outbound_ins AFTER INSERT ON outbound_records
+        FOR EACH ROW
+        WHEN NEW.updated_at = ''
+        BEGIN
+            UPDATE outbound_records SET updated_at = datetime('now', 'localtime')
+            WHERE id = NEW.id;
         END;
     """)
     db.commit()

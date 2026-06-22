@@ -1,18 +1,18 @@
 """
-数据库双向同步：PythonAnywhere ↔ 本地
+数据库双向同步：PythonAnywhere ↔ 本地  (v2.7)
 ======================================
 用法：
     python sync_db.py             自动双向同步（安全优先）
     python sync_db.py --force     强制以云端为准
     python sync_db.py --run       同步后启动本地服务
 
-同步规则：
+同步规则（v2.7 重写）：
     1. 网络不通 → 跳过，本地不受影响
     2. 数据相同 → 跳过
-    3. 本地有新数据，云端没有 → 自动推送到云端
-    4. 云端有而本地没有 → 拉取到本地
-    5. 本地有但云端已删（上次同步后消失的）→ 本地也删除
-    6. 用 --force → 云端覆盖本地（包括删除）
+    3. 构建合并数据库（本地 ∪ 云端），每条记录按 updated_at 时间戳仲裁
+    4. 合并后的数据库上传到云端，再保存到本地 → 两端完全一致
+    5. 云端已删的记录 → 本地也删（通过 sync_state 追踪）
+    6. --force → 云端直接覆盖本地
 """
 
 import os
@@ -37,52 +37,9 @@ FORCE = '--force' in sys.argv
 
 
 # ---------------------------------------------------------------------------
-# 工具：通过云端 API 添加物料
-# ---------------------------------------------------------------------------
-def push_material_to_cloud(sn, row):
-    """通过云端 API 推送一条物料"""
-    payload = json.dumps({
-        'sn': row['sn'],
-        'hw_version': row['hw_version'] or '',
-        'sw_version': row['sw_version'] or '',
-        'hw_description': row['hw_description'] or '',
-        'sw_description': row['sw_description'] or '',
-        'remarks': row['remarks'] or '',
-        'category_id': row['category_id']
-    }).encode('utf-8')
-    req = urllib.request.Request(
-        REMOTE_BASE + '/api/material/add',
-        data=payload,
-        headers={'Content-Type': 'application/json'}
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
-
-
-def delete_material_from_local(sn):
-    """从本地数据库删除一条物料"""
-    db = sqlite3.connect(LOCAL_FILE)
-    db.execute("DELETE FROM materials WHERE sn=?", (sn,))
-    db.commit()
-    db.close()
-
-
-def merge_status_to_cloud(sn, new_status):
-    """通过云端编辑API同步状态变更"""
-    payload = json.dumps({'status': new_status}).encode('utf-8')
-    req = urllib.request.Request(
-        REMOTE_BASE + '/api/material/edit/' + urllib.request.quote(sn, safe=''),
-        data=payload, headers={'Content-Type': 'application/json'}, method='POST'
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
-
-
-# ---------------------------------------------------------------------------
-# 状态文件：记录上次同步时的云端 SN 集合，用于判断删除
+# 工具：加载/保存同步状态
 # ---------------------------------------------------------------------------
 def load_sync_state():
-    """加载上次同步状态，返回 set of SNs 或空集合"""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r', encoding='utf-8') as f:
@@ -94,12 +51,250 @@ def load_sync_state():
 
 
 def save_sync_state(cloud_sns):
-    """保存本次同步后的云端 SN 集合"""
     with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump({
             'last_cloud_sns': sorted(cloud_sns),
             'last_sync_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }, f, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# 工具：上传数据库文件到云端
+# ---------------------------------------------------------------------------
+def upload_db_to_cloud(db_path):
+    """上传完整数据库文件到云端"""
+    import io
+    boundary = '----WlgzSyncBoundary'
+    body = io.BytesIO()
+    # token 字段
+    body.write(f'--{boundary}\r\n'.encode())
+    body.write(b'Content-Disposition: form-data; name="token"\r\n\r\n')
+    body.write(SYNC_TOKEN.encode())
+    body.write(b'\r\n')
+    # db 文件字段
+    body.write(f'--{boundary}\r\n'.encode())
+    body.write(b'Content-Disposition: form-data; name="db"; filename="material.db"\r\n')
+    body.write(b'Content-Type: application/octet-stream\r\n\r\n')
+    with open(db_path, 'rb') as f:
+        body.write(f.read())
+    body.write(f'\r\n--{boundary}--\r\n'.encode())
+    body_bytes = body.getvalue()
+
+    req = urllib.request.Request(
+        REMOTE_UPLOAD,
+        data=body_bytes,
+        headers={'Content-Type': f'multipart/form-data; boundary={boundary}'}
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read())
+
+
+# ---------------------------------------------------------------------------
+# 核心：合并两个数据库
+# ---------------------------------------------------------------------------
+def _has_column(db, table, column):
+    """检查表中是否有某列"""
+    cols = [c[1] for c in db.execute(f"PRAGMA table_info({table})")]
+    return column in cols
+
+
+def _get_updated_at(row, table, db):
+    """安全获取 updated_at，列不存在时返回空字符串"""
+    if _has_column(db, table, 'updated_at'):
+        return (row['updated_at'] or '').strip()
+    return ''
+
+
+def merge_databases(local_path, remote_path, merged_path, last_cloud_sns, first_sync):
+    """
+    将 local 和 remote 合并，结果写入 merged_path。
+    冲突时以 updated_at 时间戳仲裁。
+    """
+    local = sqlite3.connect(local_path)
+    remote = sqlite3.connect(remote_path)
+    local.row_factory = sqlite3.Row
+    remote.row_factory = sqlite3.Row
+
+    # 以本地为基准（保留 schema + 本地数据）
+    shutil.copy2(local_path, merged_path)
+    merged = sqlite3.connect(merged_path)
+    merged.row_factory = sqlite3.Row
+    merged.execute("PRAGMA journal_mode=DELETE")  # 合并过程用 DELETE 模式
+
+    # -------------------------------------------------------------------
+    # 1. materials 表（主键：sn）
+    # -------------------------------------------------------------------
+    local_mats = {r['sn']: r for r in local.execute("SELECT * FROM materials")}
+    remote_mats = {r['sn']: r for r in remote.execute("SELECT * FROM materials")}
+    local_sns = set(local_mats.keys())
+    remote_sns = set(remote_mats.keys())
+
+    stats = {'mat_new_cloud': 0, 'mat_local_win': 0, 'mat_cloud_win': 0,
+             'ob_new_cloud': 0, 'ob_local_win': 0, 'ob_cloud_win': 0,
+             'deleted': 0}
+
+    # 1a. 云端有、本地没有 → 插入本地
+    for sn in sorted(remote_sns - local_sns):
+        r = remote_mats[sn]
+        cols = list(r.keys())
+        placeholders = ','.join(['?'] * len(cols))
+        merged.execute(
+            f"INSERT OR IGNORE INTO materials ({','.join(cols)}) VALUES ({placeholders})",
+            [r[c] for c in cols]
+        )
+        stats['mat_new_cloud'] += 1
+
+    # 1b. 两端都有、status 不同 → 时间戳仲裁
+    for sn in local_sns & remote_sns:
+        lr, rr = local_mats[sn], remote_mats[sn]
+        ls, rs = lr['status'], rr['status']
+        lt = _get_updated_at(lr, 'materials', local)
+        rt = _get_updated_at(rr, 'materials', remote)
+        if ls != rs:
+            local_wins = False
+            if lt and rt and lt > rt:
+                local_wins = True
+            elif lt and not rt:
+                local_wins = True
+            # else: 云端赢 或 都没时间戳 → 云端为准
+
+            if local_wins:
+                merged.execute(
+                    "UPDATE materials SET status=?, updated_at=? WHERE sn=?",
+                    (ls, lt, sn)
+                )
+                stats['mat_local_win'] += 1
+            else:
+                merged.execute(
+                    "UPDATE materials SET status=?, updated_at=? WHERE sn=?",
+                    (rs, rt, sn)
+                )
+                stats['mat_cloud_win'] += 1
+        # 如果 status 相同但云端 updated_at 更新 → 同步其他字段
+        elif lt and rt and rt > lt:
+            # 云端整体更新，复制所有字段
+            for col in ['hw_version', 'sw_version', 'hw_description', 'sw_description', 'remarks', 'category_id']:
+                merged.execute(f"UPDATE materials SET {col}=? WHERE sn=?", (rr[col], sn))
+            if rt:
+                merged.execute("UPDATE materials SET updated_at=? WHERE sn=?", (rt, sn))
+
+    # 1c. 云端已删（上次有、这次没有的 SN）
+    deleted_sns = sorted(local_sns - remote_sns)
+    actually_deleted = 0
+    for sn in deleted_sns:
+        if sn in last_cloud_sns and not first_sync:
+            # 确认是云端删除
+            merged.execute("DELETE FROM materials WHERE sn=?", (sn,))
+            # 级联删除关联记录
+            for tbl in ('outbound_records', 'after_sales_records', 'fault_records',
+                        'version_changes', 'operation_logs', 'inventory_checks'):
+                merged.execute(f"DELETE FROM {tbl} WHERE sn=?", (sn,))
+            actually_deleted += 1
+    if actually_deleted:
+        # 安全阀
+        local_count = len(local_sns)
+        if actually_deleted > local_count * 0.3:
+            print(f'  🛑 安全阀触发！云端少了 {actually_deleted} 条（>{int(local_count*0.3)}），疑似云端重置，拒绝删除')
+            local.close(); remote.close(); merged.close()
+            os.remove(merged_path)
+            return None
+    stats['deleted'] = actually_deleted
+
+    # -------------------------------------------------------------------
+    # 2. outbound_records 表（主键：id）
+    # -------------------------------------------------------------------
+    local_obs = {r['id']: r for r in local.execute("SELECT * FROM outbound_records")}
+    remote_obs = {r['id']: r for r in remote.execute("SELECT * FROM outbound_records")}
+    local_ob_ids = set(local_obs.keys())
+    remote_ob_ids = set(remote_obs.keys())
+
+    ob_cols = [c[1] for c in local.execute("PRAGMA table_info(outbound_records)")]
+
+    # 2a. 云端有、本地没有 → 插入
+    for oid in sorted(remote_ob_ids - local_ob_ids):
+        r = remote_obs[oid]
+        placeholders = ','.join(['?'] * len(ob_cols))
+        merged.execute(
+            f"INSERT OR IGNORE INTO outbound_records ({','.join(ob_cols)}) VALUES ({placeholders})",
+            [r[c] for c in ob_cols]
+        )
+        stats['ob_new_cloud'] += 1
+
+    # 2b. 两端都有 → 逐字段比较，时间戳仲裁
+    for oid in local_ob_ids & remote_ob_ids:
+        lr, rr = local_obs[oid], remote_obs[oid]
+        lt = _get_updated_at(lr, 'outbound_records', local)
+        rt = _get_updated_at(rr, 'outbound_records', remote)
+        # 判断哪个更新
+        local_newer = (lt and rt and lt > rt) or (lt and not rt)
+        cloud_newer = (rt and lt and rt > lt) or (rt and not lt)
+
+        if local_newer:
+            winner = lr
+            stats['ob_local_win'] += 1
+        else:
+            winner = rr
+            if cloud_newer or (oid in remote_ob_ids):  # 云端更新或都没时间戳→云端为准
+                stats['ob_cloud_win'] += 1 if cloud_newer else 0
+
+        # 更新 merged 中的记录为胜出版本
+        for col in ob_cols:
+            if col == 'id':
+                continue
+            merged.execute(
+                f"UPDATE outbound_records SET {col}=? WHERE id=?",
+                (winner[col], oid)
+            )
+
+    # 2c. 本地有、云端没有 → 保留（这些可能是本地新增的，上传时会一起推送）
+    local_only_obs = local_ob_ids - remote_ob_ids
+    if local_only_obs:
+        print(f'  本地独有出库记录 {len(local_only_obs)} 条，保留并上传')
+
+    # -------------------------------------------------------------------
+    # 3. 其他表：直接合并（云端独有的插入，本地独有的保留）
+    # -------------------------------------------------------------------
+    other_tables = ['after_sales_records', 'fault_records', 'version_changes',
+                    'operation_logs', 'inventory_checks', 'categories']
+    for table in other_tables:
+        try:
+            local_rows = {r['id']: r for r in local.execute(f"SELECT * FROM {table}")}
+            remote_rows = {r['id']: r for r in remote.execute(f"SELECT * FROM {table}")}
+            cols = [c[1] for c in local.execute(f"PRAGMA table_info({table})")]
+            for rid in sorted(set(remote_rows.keys()) - set(local_rows.keys())):
+                r = remote_rows[rid]
+                placeholders = ','.join(['?'] * len(cols))
+                try:
+                    merged.execute(
+                        f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
+                        [r[c] for c in cols]
+                    )
+                except sqlite3.IntegrityError:
+                    pass
+        except sqlite3.OperationalError:
+            pass  # 表不存在就跳过
+
+    # -------------------------------------------------------------------
+    # 4. sqlite_sequence：取两端最大值
+    # -------------------------------------------------------------------
+    for table in ['materials', 'outbound_records', 'after_sales_records', 'fault_records',
+                   'version_changes', 'operation_logs', 'inventory_checks']:
+        try:
+            local_seq = local.execute("SELECT seq FROM sqlite_sequence WHERE name=?", (table,)).fetchone()
+            remote_seq = remote.execute("SELECT seq FROM sqlite_sequence WHERE name=?", (table,)).fetchone()
+            max_seq = max(
+                local_seq['seq'] if local_seq else 0,
+                remote_seq['seq'] if remote_seq else 0
+            )
+            merged.execute("INSERT OR REPLACE INTO sqlite_sequence (name, seq) VALUES (?, ?)", (table, max_seq))
+        except sqlite3.OperationalError:
+            pass
+
+    merged.commit()
+    local.close()
+    remote.close()
+    merged.close()
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -132,146 +327,98 @@ try:
         print('已是最新')
         sys.exit(0)
 
-    # 4. 打开两个数据库做比较
+    # 4. --force 模式：云端直接覆盖
+    if FORCE:
+        shutil.copy2(LOCAL_FILE, LOCAL_FILE + '.bak')
+        with open(LOCAL_FILE, 'wb') as f:
+            f.write(remote_data)
+        print(f'  --force: 云端覆盖本地 ({len(remote_data)/1024:.1f} KB)')
+        final_db = sqlite3.connect(LOCAL_FILE)
+        final_db.row_factory = sqlite3.Row
+        final_sns = {r['sn'] for r in final_db.execute("SELECT sn FROM materials")}
+        final_db.close()
+        save_sync_state(final_sns)
+        sys.exit(0)
+
+    # 5. 保存云端数据到临时文件
     tmp = LOCAL_FILE + '.tmp'
     with open(tmp, 'wb') as f:
         f.write(remote_data)
+
+    # 统计两边的记录数
     local_db = sqlite3.connect(LOCAL_FILE)
     remote_db = sqlite3.connect(tmp)
     local_db.row_factory = sqlite3.Row
     remote_db.row_factory = sqlite3.Row
+    local_count = local_db.execute("SELECT COUNT(*) AS cnt FROM materials").fetchone()['cnt']
+    remote_count = remote_db.execute("SELECT COUNT(*) AS cnt FROM materials").fetchone()['cnt']
+    local_ob = local_db.execute("SELECT COUNT(*) AS cnt FROM outbound_records").fetchone()['cnt']
+    remote_ob = remote_db.execute("SELECT COUNT(*) AS cnt FROM outbound_records").fetchone()['cnt']
+    local_db.close()
+    remote_db.close()
 
-    local_sns = {r['sn'] for r in local_db.execute("SELECT sn FROM materials")}
-    remote_sns = {r['sn'] for r in remote_db.execute("SELECT sn FROM materials")}
-    local_count = len(local_sns)
-    remote_count = len(remote_sns)
+    print(f'\n  本地 {local_count} 条物料 / {local_ob} 条出库 · 云端 {remote_count} 条物料 / {remote_ob} 条出库')
 
-    # 5. 加载上次同步时的云端 SN（用于判断删除）
+    # 6. 加载同步状态
     last_cloud_sns = load_sync_state()
     first_sync = (len(last_cloud_sns) == 0)
 
-    # 6. 本地有而云端没有的 SN
-    only_local = sorted(local_sns - remote_sns)
+    # 7. 合并数据库
+    merged_path = LOCAL_FILE + '.merged'
+    stats = merge_databases(LOCAL_FILE, tmp, merged_path, last_cloud_sns, first_sync)
+    if stats is None:
+        os.remove(tmp)
+        sys.exit(1)
 
-    # 7. 云端有而本地没有的 SN（云端新增的，正常拉取即可，后续覆盖会带上）
-    only_remote = sorted(remote_sns - local_sns)
+    # 8. 显示变化摘要
+    changes = []
+    if stats['mat_new_cloud']:
+        changes.append(f'云端新增 {stats["mat_new_cloud"]} 条物料')
+    if stats['mat_local_win']:
+        changes.append(f'本地赢 {stats["mat_local_win"]} 条物料状态冲突')
+    if stats['mat_cloud_win']:
+        changes.append(f'云端赢 {stats["mat_cloud_win"]} 条物料状态冲突')
+    if stats['ob_new_cloud']:
+        changes.append(f'云端新增 {stats["ob_new_cloud"]} 条出库记录')
+    if stats['ob_local_win']:
+        changes.append(f'本地赢 {stats["ob_local_win"]} 条出库记录冲突')
+    if stats['ob_cloud_win']:
+        changes.append(f'云端赢 {stats["ob_cloud_win"]} 条出库记录冲突')
+    if stats['deleted']:
+        changes.append(f'云端已删除 {stats["deleted"]} 条，同步删除本地')
+    if changes:
+        print(f'  合并结果: {", ".join(changes)}')
+    else:
+        print(f'  无差异，无需合并')
 
-    print(f'\n  本地 {local_count} 条 · 云端 {remote_count} 条')
+    # 9. 上传合并后的数据库到云端
+    print(f'  上传合并数据库到云端...', end=' ')
+    try:
+        result = upload_db_to_cloud(merged_path)
+        if result.get('success'):
+            print('OK')
+        else:
+            print(f'失败: {result.get("error", result.get("message", "未知"))}')
+    except Exception as e:
+        print(f'失败: {e}')
+        # 上传失败不阻塞，本地仍然保存合并结果
 
-    if only_remote:
-        print(f'  云端新增 {len(only_remote)} 条: {", ".join(only_remote[:5])}'
-              + ('...' if len(only_remote) > 5 else ''))
-
-    if only_local and not FORCE:
-        # 区分：哪些是本地新增的（不在上次云端SN里），哪些是云端删掉的（在上次云端SN里）
-        new_local = [sn for sn in only_local if sn not in last_cloud_sns]
-        deleted_from_cloud = [sn for sn in only_local if sn in last_cloud_sns]
-
-        if deleted_from_cloud:
-            if first_sync:
-                print(f'  ⚠ 首次同步：本地多出 {len(deleted_from_cloud)} 条，保留不删')
-            # 安全阀：如果要删的超过本地 30%，判定为云端异常，拒绝删除
-            elif len(deleted_from_cloud) > local_count * 0.3:
-                print(f'  🛑 安全阀触发！云端少了 {len(deleted_from_cloud)} 条（>{int(local_count*0.3)}），疑似云端重置，拒绝删除')
-                print(f'     如需强制同步请用 --force')
-                local_db.close()
-                remote_db.close()
-                os.remove(tmp)
-                sys.exit(1)
-            else:
-                print(f'  云端已删除 {len(deleted_from_cloud)} 条，同步删除本地:')
-                for sn in deleted_from_cloud:
-                    delete_material_from_local(sn)
-                    print(f'    ✗ {sn}')
-
-        if new_local:
-            print(f'  发现本地新增 {len(new_local)} 条，推送到云端...')
-            pushed = 0
-            failed = []
-            for sn in new_local:
-                row = local_db.execute("SELECT * FROM materials WHERE sn=?", (sn,)).fetchone()
-                try:
-                    result = push_material_to_cloud(sn, row)
-                    if result.get('success'):
-                        pushed += 1
-                        print(f'    ✓ {sn}')
-                    else:
-                        failed.append((sn, result.get('message', '未知错误')))
-                        print(f'    ✗ {sn} — {result.get("message", "")}')
-                except Exception as e:
-                    failed.append((sn, str(e)))
-                    print(f'    ✗ {sn} — {e}')
-
-            if pushed > 0:
-                print(f'  已推送 {pushed} 条，重新拉取...')
-                with urllib.request.urlopen(REMOTE_DB, timeout=30) as resp:
-                    remote_data = resp.read()
-
-            if failed:
-                print(f'  失败 {len(failed)} 条，请手动检查')
-
-        elif not deleted_from_cloud:
-            print('  无新增数据')
-
-    elif only_local and FORCE:
-        print(f'  --force 模式：云端({remote_count}条)覆盖本地({local_count}条)')
-        print(f'  本地独有的 {len(only_local)} 条将被丢弃')
-
-    # 8. 冲突仲裁：本地和云端都有，但内容不同 → 以 updated_at 时间为准
-    if not FORCE:
-        common_sns = local_sns & remote_sns
-        local_wins = []
-        for sn in common_sns:
-            lr = local_db.execute("SELECT status, updated_at FROM materials WHERE sn=?", (sn,)).fetchone()
-            rr = remote_db.execute("SELECT status, updated_at FROM materials WHERE sn=?", (sn,)).fetchone()
-            ls, lt = lr['status'], lr['updated_at'] or ''
-            rs, rt = rr['status'], rr['updated_at'] or ''
-            if ls != rs:
-                if lt and rt and lt > rt:
-                    local_wins.append((sn, ls, rs, lt, rt))
-                elif lt and rt and rt > lt:
-                    pass  # 云端更新，保留云端
-                elif lt and not rt:
-                    local_wins.append((sn, ls, rs, lt, '(空)'))
-                elif rt and not lt:
-                    pass  # 云端有时间戳本地没有，云端为准
-                else:
-                    pass  # 都没时间戳，云端为准
-
-        if local_wins:
-            print(f'  发现 {len(local_wins)} 条冲突，本地更新时间更新 → 推送到云端')
-            for sn, local_st, remote_st, lt, rt in local_wins[:10]:
-                try:
-                    result = merge_status_to_cloud(sn, local_st)
-                    if result.get('success'):
-                        print(f'    ✓ {sn}: 本地"{local_st}" ({lt}) > 云端"{remote_st}" ({rt})')
-                    else:
-                        print(f'    ✗ {sn}: {result.get("message", "未知错误")}')
-                except Exception as e:
-                    print(f'    ✗ {sn}: {e}')
-            # 推送后重新拉取，保证本地 = 云端
-            print(f'  重新拉取云端...')
-            with urllib.request.urlopen(REMOTE_DB, timeout=30) as resp:
-                remote_data = resp.read()
-
-    local_db.close()
-    remote_db.close()
+    # 10. 备份本地并替换为合并后的数据库
+    shutil.copy2(LOCAL_FILE, LOCAL_FILE + '.bak')
+    shutil.copy2(merged_path, LOCAL_FILE)
+    os.remove(merged_path)
     os.remove(tmp)
 
-    # 9. 备份并写入
-    shutil.copy2(LOCAL_FILE, LOCAL_FILE + '.bak')
-    with open(LOCAL_FILE, 'wb') as f:
-        f.write(remote_data)
-
-    # 10. 保存同步状态
-    # 重新打开新的本地数据库读取最终 SN 集合
+    # 11. 保存同步状态
     final_db = sqlite3.connect(LOCAL_FILE)
     final_db.row_factory = sqlite3.Row
     final_sns = {r['sn'] for r in final_db.execute("SELECT sn FROM materials")}
+    final_count = final_db.execute("SELECT COUNT(*) AS cnt FROM materials").fetchone()['cnt']
+    final_ob = final_db.execute("SELECT COUNT(*) AS cnt FROM outbound_records").fetchone()['cnt']
     final_db.close()
     save_sync_state(final_sns)
 
-    print(f'  同步完成 → {len(remote_data)/1024:.1f} KB')
+    print(f'  同步完成 → 本地 {final_count} 条物料 / {final_ob} 条出库')
 
 except urllib.error.HTTPError as e:
     print(f'云端不可达 (HTTP {e.code})，本地数据未受影响')
