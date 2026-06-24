@@ -1165,6 +1165,9 @@ def api_batch_add():
     sns_text = data.get('sns', '')
     sns = re.split(r'[,;；：:、\n\r]+', sns_text)
     sns = [s.strip() for s in sns if s.strip()]
+    # 去重（保留顺序），防止重复SN导致第二个INSERT违规UNIQUE
+    seen = set()
+    sns = [s for s in sns if not (s in seen or seen.add(s))]
     invalid_sns = [s for s in sns if not validate_sn(s)]
     if invalid_sns:
         return jsonify({'success': False, 'message': f'以下SN格式无效: {", ".join(invalid_sns[:10])}'}), 400
