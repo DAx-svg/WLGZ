@@ -40,20 +40,23 @@ FORCE = '--force' in sys.argv
 # 工具：加载/保存同步状态
 # ---------------------------------------------------------------------------
 def load_sync_state():
+    """加载上次同步状态，返回 (last_cloud_sns, last_local_sns)"""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                return set(data.get('last_cloud_sns', []))
+                return (set(data.get('last_cloud_sns', [])),
+                        set(data.get('last_local_sns', [])))
         except Exception:
             pass
-    return set()
+    return set(), set()
 
 
-def save_sync_state(cloud_sns):
+def save_sync_state(cloud_sns, local_sns):
     with open(STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump({
             'last_cloud_sns': sorted(cloud_sns),
+            'last_local_sns': sorted(local_sns),
             'last_sync_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }, f, ensure_ascii=False)
 
@@ -105,10 +108,11 @@ def _get_updated_at(row, table, db):
     return ''
 
 
-def merge_databases(local_path, remote_path, merged_path, last_cloud_sns, first_sync):
+def merge_databases(local_path, remote_path, merged_path, last_cloud_sns, last_local_sns, first_sync):
     """
     将 local 和 remote 合并，结果写入 merged_path。
     冲突时以 updated_at 时间戳仲裁。
+    双向删除追踪：本地删 → 云端也删；云端删 → 本地也删。
     """
     local = sqlite3.connect(local_path)
     remote = sqlite3.connect(remote_path)
@@ -131,10 +135,34 @@ def merge_databases(local_path, remote_path, merged_path, last_cloud_sns, first_
 
     stats = {'mat_new_cloud': 0, 'mat_local_win': 0, 'mat_cloud_win': 0,
              'ob_new_cloud': 0, 'ob_local_win': 0, 'ob_cloud_win': 0,
-             'deleted': 0}
+             'deleted_from_cloud': 0, 'deleted_from_local': 0}
 
-    # 1a. 云端有、本地没有 → 插入本地
+    # 1a. 云端有、本地没有的 SN
+    #     如果上次同步时本地有 → 说明本地删了 → 云端也删
+    #     否则 → 云端新增 → 加入本地
+    deleted_by_local = []
+    new_from_cloud = []
     for sn in sorted(remote_sns - local_sns):
+        if sn in last_local_sns and not first_sync:
+            deleted_by_local.append(sn)
+        else:
+            new_from_cloud.append(sn)
+
+    # 安全阀：本地一次删太多 → 可能是数据异常，拒绝同步到云端
+    if deleted_by_local and len(deleted_by_local) > len(last_local_sns) * 0.3:
+        print(f'  🛑 安全阀触发！本地少了 {len(deleted_by_local)} 条（>{int(len(last_local_sns)*0.3)}），疑似本地数据异常，拒绝删除云端')
+        local.close(); remote.close(); merged.close()
+        os.remove(merged_path)
+        return None
+
+    for sn in deleted_by_local:
+        merged.execute("DELETE FROM materials WHERE sn=?", (sn,))
+        for tbl in ('outbound_records', 'after_sales_records', 'fault_records',
+                    'version_changes', 'operation_logs', 'inventory_checks'):
+            merged.execute(f"DELETE FROM {tbl} WHERE sn=?", (sn,))
+        stats['deleted_from_local'] += 1
+
+    for sn in new_from_cloud:
         r = remote_mats[sn]
         cols = list(r.keys())
         placeholders = ','.join(['?'] * len(cols))
@@ -178,27 +206,27 @@ def merge_databases(local_path, remote_path, merged_path, last_cloud_sns, first_
             if rt:
                 merged.execute("UPDATE materials SET updated_at=? WHERE sn=?", (rt, sn))
 
-    # 1c. 云端已删（上次有、这次没有的 SN）
-    deleted_sns = sorted(local_sns - remote_sns)
-    actually_deleted = 0
-    for sn in deleted_sns:
+    # 1c. 本地有、云端没有的 SN
+    #     如果上次同步时云端有 → 说明云端删了 → 本地也删（安全阀保护）
+    deleted_from_cloud = []
+    for sn in sorted(local_sns - remote_sns):
         if sn in last_cloud_sns and not first_sync:
-            # 确认是云端删除
-            merged.execute("DELETE FROM materials WHERE sn=?", (sn,))
-            # 级联删除关联记录
-            for tbl in ('outbound_records', 'after_sales_records', 'fault_records',
-                        'version_changes', 'operation_logs', 'inventory_checks'):
-                merged.execute(f"DELETE FROM {tbl} WHERE sn=?", (sn,))
-            actually_deleted += 1
-    if actually_deleted:
-        # 安全阀
+            deleted_from_cloud.append(sn)
+
+    if deleted_from_cloud:
         local_count = len(local_sns)
-        if actually_deleted > local_count * 0.3:
-            print(f'  🛑 安全阀触发！云端少了 {actually_deleted} 条（>{int(local_count*0.3)}），疑似云端重置，拒绝删除')
+        if len(deleted_from_cloud) > local_count * 0.3:
+            print(f'  🛑 安全阀触发！云端少了 {len(deleted_from_cloud)} 条（>{int(local_count*0.3)}），疑似云端重置，拒绝删除本地')
             local.close(); remote.close(); merged.close()
             os.remove(merged_path)
             return None
-    stats['deleted'] = actually_deleted
+
+        for sn in deleted_from_cloud:
+            merged.execute("DELETE FROM materials WHERE sn=?", (sn,))
+            for tbl in ('outbound_records', 'after_sales_records', 'fault_records',
+                        'version_changes', 'operation_logs', 'inventory_checks'):
+                merged.execute(f"DELETE FROM {tbl} WHERE sn=?", (sn,))
+            stats['deleted_from_cloud'] += 1
 
     # -------------------------------------------------------------------
     # 2. outbound_records 表（主键：id）
@@ -337,7 +365,7 @@ try:
         final_db.row_factory = sqlite3.Row
         final_sns = {r['sn'] for r in final_db.execute("SELECT sn FROM materials")}
         final_db.close()
-        save_sync_state(final_sns)
+        save_sync_state(final_sns, final_sns)
         sys.exit(0)
 
     # 5. 保存云端数据到临时文件
@@ -360,18 +388,22 @@ try:
     print(f'\n  本地 {local_count} 条物料 / {local_ob} 条出库 · 云端 {remote_count} 条物料 / {remote_ob} 条出库')
 
     # 6. 加载同步状态
-    last_cloud_sns = load_sync_state()
+    last_cloud_sns, last_local_sns = load_sync_state()
     first_sync = (len(last_cloud_sns) == 0)
 
     # 7. 合并数据库
     merged_path = LOCAL_FILE + '.merged'
-    stats = merge_databases(LOCAL_FILE, tmp, merged_path, last_cloud_sns, first_sync)
+    stats = merge_databases(LOCAL_FILE, tmp, merged_path, last_cloud_sns, last_local_sns, first_sync)
     if stats is None:
         os.remove(tmp)
         sys.exit(1)
 
     # 8. 显示变化摘要
     changes = []
+    if stats['deleted_from_local']:
+        changes.append(f'本地已删除 {stats["deleted_from_local"]} 条 → 同步删除云端')
+    if stats['deleted_from_cloud']:
+        changes.append(f'云端已删除 {stats["deleted_from_cloud"]} 条 → 同步删除本地')
     if stats['mat_new_cloud']:
         changes.append(f'云端新增 {stats["mat_new_cloud"]} 条物料')
     if stats['mat_local_win']:
@@ -384,8 +416,6 @@ try:
         changes.append(f'本地赢 {stats["ob_local_win"]} 条出库记录冲突')
     if stats['ob_cloud_win']:
         changes.append(f'云端赢 {stats["ob_cloud_win"]} 条出库记录冲突')
-    if stats['deleted']:
-        changes.append(f'云端已删除 {stats["deleted"]} 条，同步删除本地')
     if changes:
         print(f'  合并结果: {", ".join(changes)}')
     else:
@@ -415,8 +445,8 @@ try:
     final_sns = {r['sn'] for r in final_db.execute("SELECT sn FROM materials")}
     final_count = final_db.execute("SELECT COUNT(*) AS cnt FROM materials").fetchone()['cnt']
     final_ob = final_db.execute("SELECT COUNT(*) AS cnt FROM outbound_records").fetchone()['cnt']
+    save_sync_state(final_sns, final_sns)
     final_db.close()
-    save_sync_state(final_sns)
 
     print(f'  同步完成 → 本地 {final_count} 条物料 / {final_ob} 条出库')
 
