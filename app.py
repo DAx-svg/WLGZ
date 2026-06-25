@@ -2564,12 +2564,37 @@ def auto_sync_from_cloud():
         print(f"[同步] 失败({e})，使用本地已有数据")
 
 
+def start_background_sync(interval_minutes=30):
+    """后台线程：每 interval_minutes 分钟自动执行一次双向同步"""
+    import subprocess, threading, time as _time
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_db.py')
+    if not os.path.exists(script):
+        print("[同步] sync_db.py 不存在，跳过后台同步线程")
+        return
+
+    def _sync_loop():
+        _time.sleep(60)  # 启动后等 1 分钟再开始第一次同步
+        while True:
+            try:
+                print(f"[同步] 开始定时同步...")
+                subprocess.run([sys.executable, script], timeout=120)
+            except Exception as e:
+                print(f"[同步] 定时同步失败: {e}")
+            _time.sleep(interval_minutes * 60)
+
+    t = threading.Thread(target=_sync_loop, daemon=True, name="bg-sync")
+    t.start()
+    print(f"[同步] 后台同步线程已启动，每 {interval_minutes} 分钟同步一次")
+
+
 if __name__ == '__main__':
     auto_sync_from_cloud()
     create_app()
+    start_background_sync()
     print("=" * 60)
     print("  物料全流程追溯系统 v2.0")
     print("  本地访问: http://127.0.0.1:8080")
+    print("  后台同步: 每 30 分钟自动同步一次")
     print("=" * 60)
     app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)
 else:
