@@ -35,6 +35,14 @@
         .clickable-row:hover { background-color: #e9ecef !important; }
         .status-badge { font-size: 0.85rem; }
         .section-title { font-size: 0.9rem; font-weight: 600; color: #666; margin-bottom: 8px; }
+        .sn-pagination { margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+        .sn-page-btn { padding: 0 6px; font-size: 0.75rem; line-height: 1.4; }
+        .sn-page-info { font-size: 0.75rem; color: #888; min-width: 50px; text-align: center; }
+        .sn-page-btn:disabled { opacity: 0.4; pointer-events: none; }
+        .table-pagination { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 12px 0; }
+        .table-pagination .page-btn { min-width: 36px; }
+        .table-pagination .page-info { font-size: 0.9rem; color: #666; }
+        .table-pagination select.per-page-select { width: auto; display: inline; }
     </style>
 </head>
 <body>
@@ -308,7 +316,12 @@
                         </div>
                     </div>
                     <!-- SN 列表 -->
-                    <div style="flex:1; min-width:300px; margin-left:20px;">
+                    <div style="flex:1; min-width:300px; margin-left:20px;"
+                         data-sub-id="{{ sub.id }}"
+                         data-total="{{ sub.total }}"
+                         data-page="1"
+                         data-per-page="20"
+                         data-status="{{ filter_status }}">
                         {% if sub.sns %}
                         <div class="section-title">包含物料：</div>
                         <div>
@@ -316,9 +329,6 @@
                             <span class="sn-tag" onclick="event.stopPropagation();window.location.href='/detail/{{ sn }}'"
                                   title="点击查看详情">{{ sn }}</span>
                             {% endfor %}
-                            {% if sub.total > 20 %}
-                            <span class="sn-tag text-muted">...共 {{ sub.total }} 件</span>
-                            {% endif %}
                         </div>
                         {% else %}
                         <span class="text-muted">暂无物料</span>
@@ -430,6 +440,7 @@
                     <thead class="table-dark">
                         <tr>
                             <th style="width:40px;display:none;" class="mgmt-cb"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>
+                            <th style="width:40px;">#</th>
                             <th>SN</th><th>品类</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>
                         </tr>
                     </thead>
@@ -437,6 +448,7 @@
                         {% for m in materials %}
                         <tr>
                             <td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="{{ m.sn }}" onchange="updateBatchDelBtn()"></td>
+                            <td class="text-muted" style="font-size:0.85rem;">{{ (page - 1) * per_page + loop.index }}</td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row"><span class="fw-bold text-primary">{{ m.sn }}</span></td>
                             <td onclick="window.location.href='/detail/{{ m.sn }}'" class="clickable-row">
                                 {% if m.cat_name %}
@@ -483,6 +495,18 @@
                 <p class="mt-2">暂无匹配物料</p>
             </div>
             {% endif %}
+            {% endif %}
+            {% if not show_month_as_new and not show_month_as_done and not show_month_fault_new and not show_month_fault_done and total_pages > 1 %}
+            <!-- 物料表格分页 -->
+            <div class="table-pagination" id="tablePagination">
+                <button class="btn btn-outline-secondary btn-sm page-btn" onclick="goMaterialsPage({{ page - 1 }})"{% if page <= 1 %} disabled{% endif %}>
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <span class="page-info">{{ page }} / {{ total_pages }} 页（共 {{ total_materials }} 条）</span>
+                <button class="btn btn-outline-secondary btn-sm page-btn" onclick="goMaterialsPage({{ page + 1 }})"{% if page >= total_pages %} disabled{% endif %}>
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -607,7 +631,7 @@ function updateTable(d) {
         if (d.show_month_fault_done) parts.push('本月修复故障：');
         if (d.current_parent) parts.push('大类筛选：');
         if (!parts.length) parts.push('全部物料：');
-        var count = materials.length;
+        var count = d.total_materials || materials.length;
         cardHeader.innerHTML = '<span>' + parts.join('') + '<strong>' + count + '</strong> 条记录</span>'
             + '<div>'
             + '<button class="btn btn-outline-secondary btn-sm me-2" id="manageBtn" onclick="toggleManage()">管理</button>'
@@ -626,8 +650,10 @@ function updateTable(d) {
         } else {
             var html = '<div class="table-responsive"><table class="table table-hover table-striped mb-0"><thead class="table-dark"><tr>'
                 + '<th style="width:40px;display:none;" class="mgmt-cb"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()" title="全选"></th>'
+                + '<th style="width:40px;">#</th>'
                 + '<th>SN</th><th>品类</th><th>硬件版本</th><th>软件版本</th><th>状态</th><th>用途</th><th>入库时间</th><th>备注</th><th>操作</th>'
                 + '</tr></thead><tbody>';
+            var rowNumBase = ((d.page || 1) - 1) * (d.per_page || 20);
             var statusBadges = {
                 '在库': 'bg-success',
                 '已出库': 'bg-warning text-dark',
@@ -643,11 +669,12 @@ function updateTable(d) {
                 '寄修出库': 'bg-info text-dark',
                 '故障出库': 'bg-info text-dark'
             };
-            materials.forEach(function(m){
+            materials.forEach(function(m, idx){
                 var statusCls = statusBadges[m.status] || 'bg-secondary';
                 var purposeCls = purposeBadges[m.latest_purpose] || 'bg-info text-dark';
                 html += '<tr>'
                     + '<td style="display:none;" class="mgmt-cb"><input type="checkbox" class="mat-cb" value="' + esc(m.sn) + '" onchange="updateBatchDelBtn()"></td>'
+                    + '<td class="text-muted" style="font-size:0.85rem;">' + (rowNumBase + idx + 1) + '</td>'
                     + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row"><span class="fw-bold text-primary">' + esc(m.sn) + '</span></td>'
                     + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + (m.cat_name ? '<span class="badge bg-secondary">' + esc(m.cat_name) + '</span>' : '<span class="text-muted">-</span>') + '</td>'
                     + '<td onclick="window.location.href=\'/detail/' + esc(m.sn) + '\'" class="clickable-row">' + esc(m.hw_version || '-') + '</td>'
@@ -665,6 +692,10 @@ function updateTable(d) {
                     + '</tr>';
             });
             html += '</tbody></table></div>';
+            // 分页控件
+            if (d.total_pages && d.total_pages > 1) {
+                html += buildTablePaginationHtml(d);
+            }
             cardBody.innerHTML = html;
         }
     }
@@ -674,25 +705,166 @@ function updateTable(d) {
     document.querySelectorAll('.mgmt-cb').forEach(function(el){ el.style.display = 'none'; });
 }
 
+// ======= 物料表格分页 =======
+function buildTablePaginationHtml(d) {
+    var page = d.page || 1;
+    var totalPages = d.total_pages || 1;
+    var total = d.total_materials || 0;
+    return '<div class="table-pagination" id="tablePagination">'
+        + '<button class="btn btn-outline-secondary btn-sm page-btn" onclick="goMaterialsPage(' + (page - 1) + ')"' + (page <= 1 ? ' disabled' : '') + '>'
+        + '<i class="bi bi-chevron-left"></i></button>'
+        + '<span class="page-info">' + page + ' / ' + totalPages + ' 页（共 ' + total + ' 条）</span>'
+        + '<button class="btn btn-outline-secondary btn-sm page-btn" onclick="goMaterialsPage(' + (page + 1) + ')"' + (page >= totalPages ? ' disabled' : '') + '>'
+        + '<i class="bi bi-chevron-right"></i></button>'
+        + '</div>';
+}
+
+function goMaterialsPage(newPage) {
+    // 使用当前筛选参数 + 新页码
+    var params = _currentFilters ? Object.assign({}, _currentFilters) : {};
+    params.page = newPage;
+    if (params.page < 1) params.page = 1;
+    ajaxNavigate(params);
+}
+
 function updateSubSns(d) {
     var cats = d.categories || [];
-    cats.forEach(function(cat){
-        cat.subs.forEach(function(sub){
+    var currentStatus = d.filter_status || '';
+    cats.forEach(function(cat) {
+        cat.subs.forEach(function(sub) {
             var card = document.getElementById('subcard-' + sub.id);
-            if (card) {
-                var snContainer = card.querySelector('div[style*=\"flex:1\"]');
-                if (snContainer && sub.sns && sub.sns.length) {
-                    var tags = sub.sns.map(function(sn){
-                        return '<span class=\"sn-tag\" onclick=\"event.stopPropagation();window.location.href=\'/detail/' + esc(sn) + '\'\" title=\"点击查看详情\">' + esc(sn) + '</span>';
-                    }).join('\n');
-                    snContainer.innerHTML = '<div class=\"section-title\">包含物料：</div><div>' + tags + (sub.total > 20 ? '<span class=\"sn-tag text-muted\">...共 ' + sub.total + ' 件</span>' : '') + '</div>';
-                } else if (snContainer) {
-                    snContainer.innerHTML = '<span class=\"text-muted\">暂无物料</span>';
-                }
+            if (!card) return;
+            var snContainer = card.querySelector('div[style*=\"flex:1\"]');
+            if (!snContainer) return;
+
+            if (sub.sns && sub.sns.length) {
+                var tags = sub.sns.map(function(sn) {
+                    return '<span class=\"sn-tag\" onclick=\"event.stopPropagation();window.location.href=\'/detail/' + esc(sn) + '\'\" title=\"点击查看详情\">' + esc(sn) + '</span>';
+                }).join('\n');
+                snContainer.innerHTML = '<div class=\"section-title\">包含物料：</div><div>' + tags + '</div>';
+                // 设置 data-* 属性（innerHTML 会覆盖，所以之后设置）
+                snContainer.setAttribute('data-sub-id', sub.id);
+                snContainer.setAttribute('data-total', sub.total);
+                snContainer.setAttribute('data-page', '1');
+                snContainer.setAttribute('data-per-page', '20');
+                snContainer.setAttribute('data-status', currentStatus);
+            } else {
+                snContainer.innerHTML = '<span class=\"text-muted\">暂无物料</span>';
+                ['data-sub-id', 'data-total', 'data-page', 'data-per-page', 'data-status'].forEach(function(attr) {
+                    snContainer.removeAttribute(attr);
+                });
             }
         });
     });
+    // 重新构建分页控件
+    initSubPagination();
 }
+
+// ======= SN 分页 =======
+var _snPageLoading = {};
+
+function initSubPagination() {
+    document.querySelectorAll('.sub-card').forEach(function(card) {
+        var snArea = card.querySelector('div[data-sub-id]');
+        if (!snArea) return;
+
+        var total = parseInt(snArea.dataset.total) || 0;
+        var perPage = parseInt(snArea.dataset.perPage) || 20;
+        if (total <= perPage) return;
+
+        var page = parseInt(snArea.dataset.page) || 1;
+        var totalPages = Math.ceil(total / perPage);
+
+        var pager = document.createElement('div');
+        pager.className = 'sn-pagination';
+        pager.innerHTML =
+            '<button class="sn-page-btn btn btn-outline-secondary btn-sm" data-dir="prev"' +
+            (page <= 1 ? ' disabled' : '') +
+            ' onclick="event.stopPropagation();snPageTurn(this)">' +
+            '<i class="bi bi-chevron-left"></i></button>' +
+            '<span class="sn-page-info">' + page + ' / ' + totalPages + '</span>' +
+            '<button class="sn-page-btn btn btn-outline-secondary btn-sm" data-dir="next"' +
+            (page >= totalPages ? ' disabled' : '') +
+            ' onclick="event.stopPropagation();snPageTurn(this)">' +
+            '<i class="bi bi-chevron-right"></i></button>';
+
+        snArea.appendChild(pager);
+    });
+}
+
+function snPageTurn(btn) {
+    var snArea = btn.closest('div[data-sub-id]');
+    if (!snArea) return;
+    var subId = snArea.dataset.subId;
+    var dir = btn.dataset.dir;
+    var page = parseInt(snArea.dataset.page) || 1;
+    var newPage = dir === 'prev' ? page - 1 : page + 1;
+
+    // 防重复点击
+    var key = subId + '-' + newPage;
+    if (_snPageLoading[key]) return;
+    _snPageLoading[key] = true;
+
+    var status = snArea.dataset.status || '';
+    var params = {sub_id: subId, page: newPage, per_page: 20};
+    if (status) params.status = status;
+
+    btn.disabled = true;
+
+    fetch('/api/sub_sns?' + new URLSearchParams(params).toString())
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            _updateSnArea(snArea, d);
+        })
+        .catch(function() {
+            // 网络错误保持当前页不变
+        })
+        .finally(function() {
+            btn.disabled = false;
+            delete _snPageLoading[key];
+        });
+}
+
+function _updateSnArea(snArea, d) {
+    // 更新 SN 标签
+    var tagDiv = snArea.querySelector('div:not(.section-title):not(.sn-pagination)');
+    if (d.sns && d.sns.length) {
+        var tagsHtml = d.sns.map(function(sn) {
+            return '<span class="sn-tag" onclick="event.stopPropagation();window.location.href=\'/detail/'
+                + esc(sn) + '\'" title="点击查看详情">' + esc(sn) + '</span>';
+        }).join('\n');
+
+        if (!snArea.querySelector('.section-title')) {
+            var st = document.createElement('div');
+            st.className = 'section-title';
+            st.textContent = '包含物料：';
+            snArea.insertBefore(st, snArea.firstChild);
+        }
+
+        if (tagDiv) {
+            tagDiv.innerHTML = tagsHtml;
+        } else {
+            tagDiv = document.createElement('div');
+            tagDiv.innerHTML = tagsHtml;
+            var pager = snArea.querySelector('.sn-pagination');
+            if (pager) {
+                snArea.insertBefore(tagDiv, pager);
+            } else {
+                snArea.appendChild(tagDiv);
+            }
+        }
+
+        // 更新分页状态
+        snArea.dataset.total = d.total;
+        snArea.dataset.page = d.page;
+    }
+
+    // 移除旧分页并重建
+    var oldPager = snArea.querySelector('.sn-pagination');
+    if (oldPager) oldPager.remove();
+    initSubPagination();
+}
+
 
 function updateCategories(d) {
     // 更新大类 pill 激活状态
@@ -853,6 +1025,11 @@ function filterByCat(cid) {
     if (el) el.classList.add('active-card');
 })();
 {% endif %}
+
+// 页面加载时初始化 SN 分页控件
+(function() {
+    initSubPagination();
+})();
 
 // ======= Toast =======
 function showToast(msg, ok) {

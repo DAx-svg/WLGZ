@@ -414,6 +414,16 @@ def index():
     show_month_out = request.args.get('month_out', '').strip()
     this_month = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m')
 
+    # 分页参数
+    try:
+        page = max(1, int(request.args.get('page', '1').strip()))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = max(1, min(200, int(request.args.get('per_page', '20').strip())))
+    except (ValueError, TypeError):
+        per_page = 50
+
     # 精确 SN 搜索 → 直接跳转（仅单关键词时）
     if search:
         keywords = search.split()
@@ -700,9 +710,17 @@ def index():
             ORDER BY f.resolved_time DESC
         """, (f'{this_month}%',)).fetchall()
 
+    # ===== 分页：对 materials 切片 =====
+    total_materials = len(materials)
+    total_pages = max(1, (total_materials + per_page - 1) // per_page)
+    if page > total_pages:
+        page = total_pages
+    offset = (page - 1) * per_page
+    materials_page = materials[offset:offset + per_page]
+
     return render_template('index.html',
                            categories=categories,
-                           materials=materials,
+                           materials=materials_page,
                            search=search,
                            current_cat=sub_cat_id,
                            current_parent=parent_id,
@@ -721,7 +739,11 @@ def index():
                            fault_records_list=fault_records_list,
                            total_all=total_all,
                            orphan=orphan,
-                           stats=stats)
+                           stats=stats,
+                           page=page,
+                           total_pages=total_pages,
+                           total_materials=total_materials,
+                           per_page=per_page)
 
 
 @app.route('/api/index_filter')
@@ -755,6 +777,16 @@ def api_index_filter():
     show_month_as_done = request.args.get('month_as_done', '').strip()
     show_month_fault_new = request.args.get('month_fault_new', '').strip()
     show_month_fault_done = request.args.get('month_fault_done', '').strip()
+
+    # 分页参数
+    try:
+        page = max(1, int(request.args.get('page', '1').strip()))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = max(1, min(200, int(request.args.get('per_page', '20').strip())))
+    except (ValueError, TypeError):
+        per_page = 50
 
     # --- 查询逻辑（和 index() 完全相同） ---
     if search:
@@ -913,8 +945,16 @@ def api_index_filter():
             } for s in subs]
         })
 
+    # ===== 分页：对 materials 切片 =====
+    total_materials = len(materials)
+    total_pages = max(1, (total_materials + per_page - 1) // per_page)
+    if page > total_pages:
+        page = total_pages
+    offset = (page - 1) * per_page
+    materials_page = materials[offset:offset + per_page]
+
     return jsonify({
-        'materials': materials,
+        'materials': materials_page,
         'categories': categories,
         'filter_status': filter_status,
         'filter_purpose': filter_purpose,
@@ -931,6 +971,64 @@ def api_index_filter():
         'show_month_fault_done': show_month_fault_done,
         'search': search,
         'orphan': db.execute("SELECT COUNT(*) AS cnt FROM materials WHERE category_id IS NULL").fetchone()['cnt'],
+        'page': page,
+        'total_pages': total_pages,
+        'total_materials': total_materials,
+        'per_page': per_page,
+    })
+
+
+@app.route('/api/sub_sns')
+def api_sub_sns():
+    """分页获取子品类下的 SN 列表"""
+    db = get_db()
+    sub_id = request.args.get('sub_id', '').strip()
+    page = request.args.get('page', '1').strip()
+    per_page = request.args.get('per_page', '20').strip()
+    filter_status = request.args.get('status', '').strip()
+
+    if not sub_id:
+        return jsonify({'error': 'sub_id required'}), 400
+    try:
+        sub_id = int(sub_id)
+        page = max(1, int(page))
+        per_page = max(1, min(100, int(per_page)))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'invalid params'}), 400
+
+    # 统计总数（尊重状态筛选）
+    count_query = "SELECT COUNT(*) FROM materials WHERE category_id=?"
+    count_params = [sub_id]
+    if filter_status:
+        count_query += " AND status=?"
+        count_params.append(filter_status)
+    total = db.execute(count_query, count_params).fetchone()[0]
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    if page > total_pages:
+        page = total_pages
+
+    # 获取当前页
+    offset = (page - 1) * per_page
+    sn_query = "SELECT sn FROM materials WHERE category_id=?"
+    sn_params = [sub_id]
+    if filter_status:
+        sn_query += " AND status=?"
+        sn_params.append(filter_status)
+    sn_query += " ORDER BY inbound_time DESC LIMIT ? OFFSET ?"
+    sn_params.extend([per_page, offset])
+
+    rows = db.execute(sn_query, sn_params).fetchall()
+
+    return jsonify({
+        'sub_id': sub_id,
+        'sns': [r['sn'] for r in rows],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+        'has_prev': page > 1,
+        'has_next': page < total_pages,
     })
 
 
