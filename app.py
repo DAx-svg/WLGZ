@@ -428,16 +428,23 @@ def index():
     if search:
         keywords = search.split()
         if len(keywords) == 1:
-            exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
+            # 规范化冒号：中英文冒号统一视为相同
+            sn_normalized = search.replace('：', ':')
+            exact = db.execute(
+                "SELECT sn FROM materials WHERE REPLACE(sn, '：', ':') = ?",
+                (sn_normalized,)
+            ).fetchone()
             if exact:
-                return redirect(url_for('detail', sn=search))
+                return redirect(url_for('detail', sn=exact['sn']))
         # 多关键词 AND 搜索（匹配 SN、备注、出库联系人/公司）
         conditions = []
         params = []
         for kw in keywords:
-            p = f'%{escape_like(kw)}%'
+            # 规范化冒号后再做 LIKE 匹配
+            kw_norm = kw.replace('：', ':')
+            p = f'%{escape_like(kw_norm)}%'
             conditions.append(
-                '(m.sn LIKE ? OR m.remarks LIKE ? OR '
+                '(REPLACE(m.sn, "：", ":") LIKE ? OR m.remarks LIKE ? OR '
                 'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? ESCAPE \'\\\' OR customer_company LIKE ? ESCAPE \'\\\'))')
             params.extend([p, p, p, p])
         sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
@@ -512,15 +519,18 @@ def index():
         sns = [m['sn'] for m in materials]
         placeholders = ','.join(['?'] * len(sns))
         rows = db.execute(
-            f"SELECT sn, purpose, purpose_detail, return_status FROM outbound_records WHERE sn IN ({placeholders}) "
+            f"SELECT sn, purpose, purpose_detail, return_status, outbound_time FROM outbound_records WHERE sn IN ({placeholders}) "
             "GROUP BY sn HAVING MAX(outbound_time)",
             sns
         ).fetchall()
         purpose_map = {r['sn']: r['purpose'] for r in rows}
         detail_map = {r['sn']: r['purpose_detail'] for r in rows}
         return_map = {r['sn']: r['return_status'] for r in rows}
+        outbound_time_map = {r['sn']: r['outbound_time'] for r in rows}
         materials = [dict(m) for m in materials]
         for m in materials:
+            # 出库时间：非在库状态的物料显示最近出库时间
+            m['latest_outbound_time'] = outbound_time_map.get(m['sn'], '')
             # 已重新入库（在库状态）的物料不显示历史出库用途
             if m['status'] == '在库':
                 m['latest_purpose'] = ''
@@ -710,6 +720,10 @@ def index():
             ORDER BY f.resolved_time DESC
         """, (f'{this_month}%',)).fetchall()
 
+    # ===== 出库相关视图按出库时间降序排列（晚→早） =====
+    if filter_status == '已出库' or show_month_out or filter_purpose or filter_return:
+        materials.sort(key=lambda m: m.get('latest_outbound_time', '') or '', reverse=True)
+
     # ===== 分页：对 materials 切片 =====
     total_materials = len(materials)
     total_pages = max(1, (total_materials + per_page - 1) // per_page)
@@ -717,6 +731,14 @@ def index():
         page = total_pages
     offset = (page - 1) * per_page
     materials_page = materials[offset:offset + per_page]
+
+    # 时间列标签：出库相关筛选时显示「出库时间」，否则显示「入库时间」
+    time_label = '出库时间' if (
+        filter_status == '已出库'
+        or show_month_out
+        or filter_purpose
+        or filter_return
+    ) else '入库时间'
 
     return render_template('index.html',
                            categories=categories,
@@ -743,7 +765,8 @@ def index():
                            page=page,
                            total_pages=total_pages,
                            total_materials=total_materials,
-                           per_page=per_page)
+                           per_page=per_page,
+                           time_column_label=time_label)
 
 
 @app.route('/api/index_filter')
@@ -792,15 +815,22 @@ def api_index_filter():
     if search:
         keywords = search.split()
         if len(keywords) == 1:
-            exact = db.execute("SELECT sn FROM materials WHERE sn = ?", (search,)).fetchone()
+            # 规范化冒号：中英文冒号统一视为相同
+            sn_normalized = search.replace('：', ':')
+            exact = db.execute(
+                "SELECT sn FROM materials WHERE REPLACE(sn, '：', ':') = ?",
+                (sn_normalized,)
+            ).fetchone()
             if exact:
-                return jsonify({'redirect': url_for('detail', sn=search)})
+                return jsonify({'redirect': url_for('detail', sn=exact['sn'])})
         conditions = []
         params = []
         for kw in keywords:
-            p = f'%{escape_like(kw)}%'
+            # 规范化冒号后再做 LIKE 匹配
+            kw_norm = kw.replace('：', ':')
+            p = f'%{escape_like(kw_norm)}%'
             conditions.append(
-                '(m.sn LIKE ? OR m.remarks LIKE ? OR '
+                '(REPLACE(m.sn, "：", ":") LIKE ? OR m.remarks LIKE ? OR '
                 'm.sn IN (SELECT sn FROM outbound_records WHERE customer_name LIKE ? ESCAPE \'\\\' OR customer_company LIKE ? ESCAPE \'\\\'))')
             params.extend([p, p, p, p])
         sql = ('SELECT DISTINCT m.* FROM materials m WHERE '
@@ -873,15 +903,18 @@ def api_index_filter():
         sns = [m['sn'] for m in materials]
         placeholders = ','.join(['?'] * len(sns))
         rows = db.execute(
-            f"SELECT sn, purpose, purpose_detail, return_status FROM outbound_records WHERE sn IN ({placeholders}) "
+            f"SELECT sn, purpose, purpose_detail, return_status, outbound_time FROM outbound_records WHERE sn IN ({placeholders}) "
             "GROUP BY sn HAVING MAX(outbound_time)",
             sns
         ).fetchall()
         purpose_map = {r['sn']: r['purpose'] for r in rows}
         detail_map = {r['sn']: r['purpose_detail'] for r in rows}
         return_map = {r['sn']: r['return_status'] for r in rows}
+        outbound_time_map = {r['sn']: r['outbound_time'] for r in rows}
         materials = [dict(m) for m in materials]
         for m in materials:
+            # 出库时间：非在库状态的物料显示最近出库时间
+            m['latest_outbound_time'] = outbound_time_map.get(m['sn'], '')
             if m['status'] == '在库':
                 m['latest_purpose'] = ''
                 m['latest_purpose_detail'] = ''
@@ -945,6 +978,10 @@ def api_index_filter():
             } for s in subs]
         })
 
+    # ===== 出库相关视图按出库时间降序排列（晚→早） =====
+    if filter_status == '已出库' or show_month_out or filter_purpose or filter_return:
+        materials.sort(key=lambda m: m.get('latest_outbound_time', '') or '', reverse=True)
+
     # ===== 分页：对 materials 切片 =====
     total_materials = len(materials)
     total_pages = max(1, (total_materials + per_page - 1) // per_page)
@@ -952,6 +989,14 @@ def api_index_filter():
         page = total_pages
     offset = (page - 1) * per_page
     materials_page = materials[offset:offset + per_page]
+
+    # 时间列标签：出库相关筛选时显示「出库时间」，否则显示「入库时间」
+    time_label = '出库时间' if (
+        filter_status == '已出库'
+        or show_month_out
+        or filter_purpose
+        or filter_return
+    ) else '入库时间'
 
     return jsonify({
         'materials': materials_page,
@@ -975,6 +1020,7 @@ def api_index_filter():
         'total_pages': total_pages,
         'total_materials': total_materials,
         'per_page': per_page,
+        'time_column_label': time_label,
     })
 
 
@@ -1261,7 +1307,7 @@ def api_batch_add():
     db = get_db()
     data = request.get_json(force=True)
     sns_text = data.get('sns', '')
-    sns = re.split(r'[,;；：:、\n\r]+', sns_text)
+    sns = re.split(r'[,;；、\n\r]+', sns_text)
     sns = [s.strip() for s in sns if s.strip()]
     # 去重（保留顺序），防止重复SN导致第二个INSERT违规UNIQUE
     seen = set()
@@ -2664,25 +2710,48 @@ def auto_sync_from_cloud():
 
 def start_background_sync(interval_minutes=30):
     """后台线程：每 interval_minutes 分钟自动执行一次双向同步"""
-    import subprocess, threading, time as _time
+    import subprocess, threading, time as _time, logging
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_db.py')
     if not os.path.exists(script):
         print("[同步] sync_db.py 不存在，跳过后台同步线程")
         return
+
+    # 直接用当前可执行文件（pythonw.exe），capture_output 会捕获输出到日志
+    py_exe = sys.executable
+
+    log_dir = os.path.dirname(os.path.abspath(__file__))
 
     def _sync_loop():
         _time.sleep(60)  # 启动后等 1 分钟再开始第一次同步
         while True:
             try:
                 print(f"[同步] 开始定时同步...")
-                subprocess.run([sys.executable, script], timeout=120)
+                result = subprocess.run(
+                    [py_exe, script],
+                    capture_output=True, text=True, timeout=120
+                )
+                # 写入日志文件
+                timestamp = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+                with open(os.path.join(log_dir, 'sync.log'), 'a', encoding='utf-8') as f:
+                    f.write(f"[{timestamp}] exit={result.returncode}\n")
+                    if result.stdout:
+                        f.write(result.stdout)
+                    if result.stderr:
+                        f.write("STDERR:\n" + result.stderr)
+                    f.write("\n")
+                if result.returncode != 0:
+                    print(f"[同步] 同步异常 (exit={result.returncode})，详见 sync.log")
             except Exception as e:
                 print(f"[同步] 定时同步失败: {e}")
+                timestamp = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+                with open(os.path.join(log_dir, 'sync.log'), 'a', encoding='utf-8') as f:
+                    f.write(f"[{timestamp}] EXCEPTION: {e}\n\n")
             _time.sleep(interval_minutes * 60)
 
     t = threading.Thread(target=_sync_loop, daemon=True, name="bg-sync")
     t.start()
     print(f"[同步] 后台同步线程已启动，每 {interval_minutes} 分钟同步一次")
+    print(f"[同步] 同步日志: {os.path.join(log_dir, 'sync.log')}")
 
 
 if __name__ == '__main__':
